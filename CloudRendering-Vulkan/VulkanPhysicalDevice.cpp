@@ -55,8 +55,7 @@ std::vector<VkPhysicalDevice> VulkanPhysicalDevice::GetAvailablePhysicalDevices(
 bool VulkanPhysicalDevice::CheckPhysicalDeviceSupported(VkPhysicalDevice& device, QueueFamilyIndices& familyIndices)
 {
 	bool supportsQueueFamily = CheckQueueFamilySupported(device, familyIndices);
-
-	return false;
+	return supportsQueueFamily;
 }
 
 bool VulkanPhysicalDevice::CheckQueueFamilySupported(VkPhysicalDevice& device, QueueFamilyIndices& familyIndices)
@@ -95,9 +94,9 @@ bool VulkanPhysicalDevice::CheckQueueFamilySupported(VkPhysicalDevice& device, Q
 	return false;
 }
 
-VulkanPhysicalDevice::VulkanPhysicalDevice(VulkanInstance* pInstance, VkPhysicalDevice& device, QueueFamilyIndices& indices)
+VulkanPhysicalDevice::VulkanPhysicalDevice(VulkanInstance* instance, VkPhysicalDevice& device, QueueFamilyIndices& indices)
 {
-	m_pInstance = pInstance;
+	m_instance = instance;
 	m_device = device;
 	m_familyIndices = indices;
 
@@ -115,22 +114,22 @@ VkPhysicalDevice& VulkanPhysicalDevice::GetPhysicaDevice()
 	return m_device;
 }
 
-const QueueFamilyIndices& VulkanPhysicalDevice::GetQueueFamilyIndices()
+QueueFamilyIndices& VulkanPhysicalDevice::GetQueueFamilyIndices()
 {
 	return m_familyIndices;
 }
 
-const VkPhysicalDeviceProperties& VulkanPhysicalDevice::GetPhysicalDeviceProperties()
+VkPhysicalDeviceProperties& VulkanPhysicalDevice::GetPhysicalDeviceProperties()
 {
 	return m_physicalDeviceProperties;
 }
 
-const VkPhysicalDeviceFeatures& VulkanPhysicalDevice::GetPhyisicalDeviceFeatures()
+VkPhysicalDeviceFeatures& VulkanPhysicalDevice::GetPhyisicalDeviceFeatures()
 {
 	return m_physicalDeviceFeatures;
 }
 
-const VkPhysicalDeviceMemoryProperties& VulkanPhysicalDevice::GetPhysicalDeviceMemoryProperties()
+VkPhysicalDeviceMemoryProperties& VulkanPhysicalDevice::GetPhysicalDeviceMemoryProperties()
 {
 	return m_physicalDeviceMemoryProperties;
 }

@@ -55,5 +55,34 @@ VkDeviceQueueCreateInfo initializers::CreateDeviceQueueCreateInfo(uint32_t queue
 
 VkDeviceCreateInfo initializers::CreateDeviceCreateInfo(std::vector<VkDeviceQueueCreateInfo>& queueCreateInfos, VkPhysicalDeviceFeatures& deviceFeatures)
 {
-	return VkDeviceCreateInfo();
+	VkDeviceCreateInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	info.pQueueCreateInfos = queueCreateInfos.data();
+	info.queueCreateInfoCount = (uint32_t)queueCreateInfos.size();
+	info.pEnabledFeatures = &deviceFeatures;
+
+	return info;
+}
+
+VkCommandPoolCreateInfo initializers::CreateCommandPoolCreateInfo(uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags /*= 0*/)
+{
+	VkCommandPoolCreateInfo info{};
+
+	info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	info.queueFamilyIndex = queueFamilyIndex;
+	info.flags = flags;
+
+	return info;
+}
+
+VkCommandBufferAllocateInfo initializers::CreateCommandBufferAllocateInfo(VkCommandPool pool, uint32_t count)
+{
+	VkCommandBufferAllocateInfo info{};
+
+	info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	info.commandPool = pool;
+	info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	info.commandBufferCount = count;
+
+	return info;
 }

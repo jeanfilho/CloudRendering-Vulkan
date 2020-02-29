@@ -7,10 +7,10 @@ class VulkanInstance;
 class VulkanPhysicalDevice
 {
 public:
-	static VulkanPhysicalDevice* CreatePhysicalDevice(VulkanInstance* pInstance);
+	static VulkanPhysicalDevice* CreatePhysicalDevice(VulkanInstance* instance);
 
 private:
-	static std::vector<VkPhysicalDevice> GetAvailablePhysicalDevices(VulkanInstance* pInstance);
+	static std::vector<VkPhysicalDevice> GetAvailablePhysicalDevices(VulkanInstance* instance);
 	static bool CheckPhysicalDeviceSupported(VkPhysicalDevice& device, QueueFamilyIndices& familyIndices);
 	static bool CheckQueueFamilySupported(VkPhysicalDevice& device, QueueFamilyIndices& familyIndices);
 
@@ -18,16 +18,16 @@ public:
 	~VulkanPhysicalDevice();
 
 	VkPhysicalDevice& GetPhysicaDevice();
-	const QueueFamilyIndices& GetQueueFamilyIndices();
-	const VkPhysicalDeviceProperties& GetPhysicalDeviceProperties();
-	const VkPhysicalDeviceFeatures& GetPhyisicalDeviceFeatures();
-	const VkPhysicalDeviceMemoryProperties& GetPhysicalDeviceMemoryProperties();
+	QueueFamilyIndices& GetQueueFamilyIndices();
+	VkPhysicalDeviceProperties& GetPhysicalDeviceProperties();
+	VkPhysicalDeviceFeatures& GetPhyisicalDeviceFeatures();
+	VkPhysicalDeviceMemoryProperties& GetPhysicalDeviceMemoryProperties();
 
 private:
-	VulkanPhysicalDevice(VulkanInstance* pInstance, VkPhysicalDevice& device, QueueFamilyIndices& indices);
+	VulkanPhysicalDevice(VulkanInstance* instance, VkPhysicalDevice& device, QueueFamilyIndices& indices);
 
 
-	VulkanInstance* m_pInstance = nullptr;
+	VulkanInstance* m_instance = nullptr;
 	VkPhysicalDevice m_device{};
 	QueueFamilyIndices m_familyIndices{};
 
