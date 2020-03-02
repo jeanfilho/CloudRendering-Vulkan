@@ -46,6 +46,11 @@ VkDevice* VulkanDevice::GetDevice()
 	return &m_device;
 }
 
+VulkanPhysicalDevice* VulkanDevice::GetPhysicalDevice()
+{
+	return m_physicalDevice;
+}
+
 VkQueue* VulkanDevice::GetComputeQueue()
 {
 	return &m_computeQueue;

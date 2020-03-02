@@ -12,6 +12,7 @@ public:
 
 	VulkanInstance* GetInstance();
 	VkDevice* GetDevice();
+	VulkanPhysicalDevice* GetPhysicalDevice();
 	VkQueue* GetComputeQueue();
 	VkCommandPool& GetComputeCommandPool();
 

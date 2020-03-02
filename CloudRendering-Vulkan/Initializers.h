@@ -21,4 +21,7 @@ namespace initializers
 
 	VkCommandBufferAllocateInfo CreateCommandBufferAllocateInfo(VkCommandPool pool, uint32_t count);
 
+	VkBufferCreateInfo CreateBufferCreateInfo(VkDeviceSize size, VkBufferUsageFlags usage);
+
+	VkMemoryAllocateInfo CreateMemoryAllocateInfo(VkDeviceSize size, uint32_t memoryTypeIndex);
 }

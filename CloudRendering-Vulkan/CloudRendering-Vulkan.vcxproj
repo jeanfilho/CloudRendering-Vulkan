@@ -161,6 +161,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="Validation.cpp" />
+    <ClCompile Include="VulkanBuffer.cpp" />
     <ClCompile Include="VulkanDevice.cpp" />
     <ClCompile Include="VulkanInstance.cpp" />
     <ClCompile Include="VulkanPhysicalDevice.cpp" />
@@ -170,6 +171,7 @@
     <ClInclude Include="QueueFamilyIndices.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="Validation.h" />
+    <ClInclude Include="VulkanBuffer.h" />
     <ClInclude Include="VulkanConfiguration.h" />
     <ClInclude Include="VulkanDevice.h" />
     <ClInclude Include="VulkanInstance.h" />
