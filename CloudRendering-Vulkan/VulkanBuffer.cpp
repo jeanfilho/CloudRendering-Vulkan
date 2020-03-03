@@ -3,7 +3,6 @@
 
 #include "VulkanPhysicalDevice.h"
 #include "VulkanDevice.h"
-#include "Initializers.h"
 
 VulkanBuffer::VulkanBuffer(VulkanDevice* device, void* ptr, unsigned int elementSize, unsigned int count /*= 1*/)
 {
@@ -19,12 +18,12 @@ VulkanBuffer::~VulkanBuffer()
 {
 	if (m_deviceMemory != VK_NULL_HANDLE)
 	{
-		vkUnmapMemory(*m_device->GetDevice(), m_deviceMemory);
-		vkFreeMemory(*m_device->GetDevice(), m_deviceMemory, nullptr);
+		vkUnmapMemory(m_device->GetDevice(), m_deviceMemory);
+		vkFreeMemory(m_device->GetDevice(), m_deviceMemory, nullptr);
 	}
 	if (m_buffer != VK_NULL_HANDLE)
 	{
-		vkDestroyBuffer(*m_device->GetDevice(), m_buffer, nullptr);
+		vkDestroyBuffer(m_device->GetDevice(), m_buffer, nullptr);
 	}
 }
 
@@ -45,18 +44,18 @@ void VulkanBuffer::SetData(size_t startIndex, size_t count)
 
 void VulkanBuffer::CreateBuffer()
 {
-	VkBufferCreateInfo bufferInfo = initializers::CreateBufferCreateInfo(m_totalSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+	VkBufferCreateInfo bufferInfo = initializers::BufferCreateInfo(m_totalSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 
-	ValidCheck(vkCreateBuffer(*m_device->GetDevice(), &bufferInfo, nullptr, &m_buffer));
+	ValidCheck(vkCreateBuffer(m_device->GetDevice(), &bufferInfo, nullptr, &m_buffer));
 
 	VkMemoryRequirements memRequirements;
-	vkGetBufferMemoryRequirements(*m_device->GetDevice(), m_buffer, &memRequirements);
+	vkGetBufferMemoryRequirements(m_device->GetDevice(), m_buffer, &memRequirements);
 
-	VkMemoryAllocateInfo allocInfo = initializers::CreateMemoryAllocateInfo(memRequirements.size, FindMemoryType(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, memRequirements.memoryTypeBits));
+	VkMemoryAllocateInfo allocInfo = initializers::MemoryAllocateInfo(memRequirements.size, FindMemoryType(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, memRequirements.memoryTypeBits));
 
-	ValidCheck(vkAllocateMemory(*m_device->GetDevice(), &allocInfo, nullptr, &m_deviceMemory));
-	ValidCheck(vkBindBufferMemory(*m_device->GetDevice(), m_buffer, m_deviceMemory, 0));
-	ValidCheck(vkMapMemory(*m_device->GetDevice(), m_deviceMemory, 0, memRequirements.size, 0, &m_mappedMemory));
+	ValidCheck(vkAllocateMemory(m_device->GetDevice(), &allocInfo, nullptr, &m_deviceMemory));
+	ValidCheck(vkBindBufferMemory(m_device->GetDevice(), m_buffer, m_deviceMemory, 0));
+	ValidCheck(vkMapMemory(m_device->GetDevice(), m_deviceMemory, 0, memRequirements.size, 0, &m_mappedMemory));
 }
 
 uint32_t VulkanBuffer::FindMemoryType(VkMemoryPropertyFlags props, uint32_t typeFilter)

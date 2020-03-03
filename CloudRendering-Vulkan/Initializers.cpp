@@ -3,6 +3,9 @@
 
 #include "VulkanConfiguration.h"
 #include "QueueFamilyIndices.h"
+#include "VulkanDevice.h"
+
+#include "GLFW/glfw3native.h"
 
 VkInstanceCreateInfo initializers::CreateInstanceCreateInfo(
 	const VkApplicationInfo& appInfo,
@@ -24,7 +27,7 @@ VkInstanceCreateInfo initializers::CreateInstanceCreateInfo(
 	return info;
 }
 
-VkApplicationInfo initializers::CreateApplicationInfo(const VulkanConfiguration& config)
+VkApplicationInfo initializers::ApplicationInfo(const VulkanConfiguration& config)
 {
 	VkApplicationInfo info{};
 
@@ -41,7 +44,7 @@ VkApplicationInfo initializers::CreateApplicationInfo(const VulkanConfiguration&
 	return info;
 }
 
-VkDeviceQueueCreateInfo initializers::CreateDeviceQueueCreateInfo(uint32_t queueFamilyIndex, float& priority)
+VkDeviceQueueCreateInfo initializers::DeviceQueueCreateInfo(uint32_t queueFamilyIndex, float& priority)
 {
 	VkDeviceQueueCreateInfo queueCreateInfo{};
 
@@ -53,18 +56,22 @@ VkDeviceQueueCreateInfo initializers::CreateDeviceQueueCreateInfo(uint32_t queue
 	return queueCreateInfo;
 }
 
-VkDeviceCreateInfo initializers::CreateDeviceCreateInfo(std::vector<VkDeviceQueueCreateInfo>& queueCreateInfos, VkPhysicalDeviceFeatures& deviceFeatures)
+VkDeviceCreateInfo initializers::DeviceCreateInfo(std::vector<VkDeviceQueueCreateInfo>& queueCreateInfos, VkPhysicalDeviceFeatures& deviceFeatures, std::vector<const char*>& deviceExtensions)
 {
 	VkDeviceCreateInfo info{};
 	info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	info.pQueueCreateInfos = queueCreateInfos.data();
-	info.queueCreateInfoCount = (uint32_t)queueCreateInfos.size();
+	info.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+
 	info.pEnabledFeatures = &deviceFeatures;
+
+	info.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+	info.ppEnabledExtensionNames = deviceExtensions.data();
 
 	return info;
 }
 
-VkCommandPoolCreateInfo initializers::CreateCommandPoolCreateInfo(uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags /*= 0*/)
+VkCommandPoolCreateInfo initializers::CommandPoolCreateInfo(uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags /*= 0*/)
 {
 	VkCommandPoolCreateInfo info{};
 
@@ -75,7 +82,7 @@ VkCommandPoolCreateInfo initializers::CreateCommandPoolCreateInfo(uint32_t queue
 	return info;
 }
 
-VkCommandBufferAllocateInfo initializers::CreateCommandBufferAllocateInfo(VkCommandPool pool, uint32_t count)
+VkCommandBufferAllocateInfo initializers::CommandBufferAllocateInfo(VkCommandPool pool, uint32_t count)
 {
 	VkCommandBufferAllocateInfo info{};
 
@@ -87,7 +94,7 @@ VkCommandBufferAllocateInfo initializers::CreateCommandBufferAllocateInfo(VkComm
 	return info;
 }
 
-VkBufferCreateInfo initializers::CreateBufferCreateInfo(VkDeviceSize size, VkBufferUsageFlags usage)
+VkBufferCreateInfo initializers::BufferCreateInfo(VkDeviceSize size, VkBufferUsageFlags usage)
 {
 	VkBufferCreateInfo info{};
 
@@ -99,13 +106,87 @@ VkBufferCreateInfo initializers::CreateBufferCreateInfo(VkDeviceSize size, VkBuf
 	return info;
 }
 
-VkMemoryAllocateInfo initializers::CreateMemoryAllocateInfo(VkDeviceSize size, uint32_t memoryTypeIndex)
+VkMemoryAllocateInfo initializers::MemoryAllocateInfo(VkDeviceSize size, uint32_t memoryTypeIndex)
 {
 	VkMemoryAllocateInfo info{};
 
 	info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	info.allocationSize = size;
 	info.memoryTypeIndex = memoryTypeIndex;
+
+	return info;
+}
+
+VkWin32SurfaceCreateInfoKHR initializers::Win32SurfaceCreateInfo(GLFWwindow* window)
+{
+	VkWin32SurfaceCreateInfoKHR info{};
+
+	info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+	info.hwnd = glfwGetWin32Window(window);
+	info.hinstance = GetModuleHandle(nullptr);
+
+	return info;
+}
+
+VkSwapchainCreateInfoKHR initializers::SwapchainCreateInfo(VulkanDevice* device, uint32_t imageCount, VkSurfaceFormatKHR surfaceFormat, VkPresentModeKHR presentMode, VkExtent2D extent)
+{
+
+	QueueFamilyIndices& indices = device->GetPhysicalDevice()->GetQueueFamilyIndices();
+	VkSurfaceKHR surface = device->GetSurface()->GetSurface();
+	SwapchainSupportDetails swapchainSupport = device->GetPhysicalDevice()->QuerySwapchainSupport(device->GetSurface());
+
+	VkSwapchainCreateInfoKHR info = {};
+	info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+	info.surface = surface;
+	info.minImageCount = imageCount;
+	info.imageFormat = surfaceFormat.format;
+	info.imageColorSpace = surfaceFormat.colorSpace;
+	info.imageExtent = extent;
+	info.imageArrayLayers = 1;
+	info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+	uint32_t queueFamilyIndices[] = { indices.graphicsFamily, indices.presentFamily };
+	if (indices.graphicsFamily != indices.presentFamily)
+	{
+		info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+		info.queueFamilyIndexCount = 2;
+		info.pQueueFamilyIndices = queueFamilyIndices;
+	}
+	else
+	{
+		info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		info.queueFamilyIndexCount = 0; // Optional
+		info.pQueueFamilyIndices = nullptr; // Optional
+	}
+
+	info.preTransform = swapchainSupport.capabilities.currentTransform;
+	info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+	info.presentMode = presentMode;
+	info.clipped = VK_TRUE;
+
+	info.oldSwapchain = VK_NULL_HANDLE;
+
+	return info;
+}
+
+VkImageViewCreateInfo initializers::ImageViewCreateInfo(VkImage image, VkFormat format)
+{
+	VkImageViewCreateInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	info.image = image;
+	info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	info.format = format;
+
+	info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+	info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+	info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+	info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+	info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	info.subresourceRange.baseMipLevel = 0;
+	info.subresourceRange.levelCount = 1;
+	info.subresourceRange.baseArrayLayer = 0;
+	info.subresourceRange.layerCount = 1;
 
 	return info;
 }

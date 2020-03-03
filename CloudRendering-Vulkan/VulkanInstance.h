@@ -11,7 +11,7 @@ public:
 	VkInstance& GetInstance();
 
 private:
-	VkInstance instance;
-	std::vector<const char*> layers;
-	std::vector<const char*> extensions;
+	VkInstance m_instance;
+	std::vector<const char*> m_layers;
+	std::vector<const char*> m_extensions;
 };

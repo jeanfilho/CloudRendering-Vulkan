@@ -8,6 +8,6 @@ bool ValidCheck(const VkResult& result)
 		return true;
 	}
 
-	std::cout << "Vulkan Error " << result;
+	throw std::runtime_error("Failed to create Physical Device");
 	return false;
 }

@@ -1,19 +1,23 @@
 #pragma once
 
+#include "VulkanPhysicalDevice.h"
+#include "VulkanSurface.h"
+
 // Fwd. decl.
-class VulkanPhysicalDevice;
 class VulkanInstance;
 
 class VulkanDevice
 {
 public:
-	VulkanDevice(VulkanInstance* instance, VulkanPhysicalDevice* physicalDevice);
+	VulkanDevice(VulkanInstance* instance, VulkanSurface* surface, VulkanPhysicalDevice* physicalDevice);
 	~VulkanDevice();
 
 	VulkanInstance* GetInstance();
-	VkDevice* GetDevice();
 	VulkanPhysicalDevice* GetPhysicalDevice();
-	VkQueue* GetComputeQueue();
+	VulkanSurface* GetSurface();
+
+	VkDevice GetDevice();
+	VkQueue GetComputeQueue();
 	VkCommandPool& GetComputeCommandPool();
 
 	void GetComputeCommand(VkCommandBuffer* buffers, uint32_t count);
@@ -21,8 +25,12 @@ public:
 
 private:
 	VulkanInstance* m_instance = nullptr;
-	VkDevice m_device;
 	VulkanPhysicalDevice* m_physicalDevice = nullptr;
-	VkQueue m_computeQueue;
+	VulkanSurface* m_surface = nullptr;
+
+	VkDevice m_device;
+	VkQueue m_computeQueue = VK_NULL_HANDLE;
+	VkQueue m_graphicsQueue = VK_NULL_HANDLE;
+	VkQueue m_presentQueue = VK_NULL_HANDLE;
 	VkCommandPool m_computeCommandPool;
 };
