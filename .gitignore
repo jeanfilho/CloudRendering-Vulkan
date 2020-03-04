@@ -355,3 +355,4 @@ MigrationBackup/
 # Cloud Rendering Project:
 
 !/libs/**/*
+*.spv
