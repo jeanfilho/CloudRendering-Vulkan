@@ -3,11 +3,11 @@
 
 #include "VulkanConfiguration.h"
 #include "QueueFamilyIndices.h"
-#include "VulkanDevice.h"
+#include "SwapchainSupportDetails.h"
 
 #include "GLFW/glfw3native.h"
 
-VkInstanceCreateInfo initializers::CreateInstanceCreateInfo(
+VkInstanceCreateInfo initializers::InstanceCreateInfo(
 	const VkApplicationInfo& appInfo,
 	const std::vector<const char*>& layers,
 	const std::vector<const char*>& extensions)
@@ -128,14 +128,9 @@ VkWin32SurfaceCreateInfoKHR initializers::Win32SurfaceCreateInfo(GLFWwindow* win
 	return info;
 }
 
-VkSwapchainCreateInfoKHR initializers::SwapchainCreateInfo(VulkanDevice* device, uint32_t imageCount, VkSurfaceFormatKHR surfaceFormat, VkPresentModeKHR presentMode, VkExtent2D extent)
+VkSwapchainCreateInfoKHR initializers::SwapchainCreateInfo(VkSurfaceKHR surface, QueueFamilyIndices& indices, SwapchainSupportDetails swapchainSupport, uint32_t imageCount, VkSurfaceFormatKHR surfaceFormat, VkPresentModeKHR presentMode, VkExtent2D extent)
 {
-
-	QueueFamilyIndices& indices = device->GetPhysicalDevice()->GetQueueFamilyIndices();
-	VkSurfaceKHR surface = device->GetSurface()->GetSurface();
-	SwapchainSupportDetails swapchainSupport = device->GetPhysicalDevice()->QuerySwapchainSupport(device->GetSurface());
-
-	VkSwapchainCreateInfoKHR info = {};
+	VkSwapchainCreateInfoKHR info{};
 	info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
 	info.surface = surface;
 	info.minImageCount = imageCount;
@@ -187,6 +182,42 @@ VkImageViewCreateInfo initializers::ImageViewCreateInfo(VkImage image, VkFormat 
 	info.subresourceRange.levelCount = 1;
 	info.subresourceRange.baseArrayLayer = 0;
 	info.subresourceRange.layerCount = 1;
+
+	return info;
+}
+
+VkShaderModuleCreateInfo initializers::ShaderModuleCreateInfo(std::vector<char>& code)
+{
+	VkShaderModuleCreateInfo info{};
+
+	info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	info.codeSize = code.size();
+	info.pCode = reinterpret_cast<const uint32_t*>(code.data());
+
+	return info;
+}
+
+VkPipelineShaderStageCreateInfo initializers::PipelineShaderStageCreateInfo(VkShaderModule module, VkShaderStageFlagBits stage)
+{
+	VkPipelineShaderStageCreateInfo info = {};
+	info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	info.stage = stage;
+	info.module = module;
+	info.pName = "main";
+
+	return info;
+}
+
+VkFramebufferCreateInfo initializers::FramebufferCreateInfo(VkRenderPass renderPass, VkImageView* attachments, VkExtent2D& swapchainExtent)
+{
+	VkFramebufferCreateInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	info.renderPass = renderPass;
+	info.attachmentCount = 1;
+	info.pAttachments = attachments;
+	info.width = swapchainExtent.width;
+	info.height = swapchainExtent.height;
+	info.layers = 1;
 
 	return info;
 }

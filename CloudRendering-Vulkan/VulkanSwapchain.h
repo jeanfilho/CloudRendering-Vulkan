@@ -17,7 +17,7 @@ public:
 	VkSwapchainKHR GetSwapchain();
 	std::vector<VkImage>& GetSwapchainImages();
 	VkFormat GetImageFormat();
-	VkExtent2D GetExtent();
+	VkExtent2D& GetExtent();
 
 private:
 	VulkanDevice* m_device = nullptr;

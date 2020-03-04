@@ -18,3 +18,8 @@ VulkanImageView::~VulkanImageView()
 		vkDestroyImageView(m_device->GetDevice(), m_imageView, nullptr);
 	}
 }
+
+VkImageView VulkanImageView::GetImageView()
+{
+	return m_imageView;
+}

@@ -1,8 +1,6 @@
 #include "stdafx.h"
 #include "VulkanDevice.h"
 
-#include "Initializers.h"
-
 VulkanDevice::VulkanDevice(VulkanInstance* instance, VulkanSurface* surface, VulkanPhysicalDevice* physicalDevice)
 {
 	m_instance = instance;

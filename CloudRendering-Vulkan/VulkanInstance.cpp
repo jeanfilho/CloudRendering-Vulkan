@@ -1,8 +1,6 @@
 #include "stdafx.h"
 #include "VulkanInstance.h"
 
-#include "Initializers.h"
-
 VulkanInstance::VulkanInstance(const VulkanConfiguration& config)
 {
 	// Initialize GLFW required extensions
@@ -18,7 +16,7 @@ VulkanInstance::VulkanInstance(const VulkanConfiguration& config)
 	m_layers.push_back("VK_LAYER_LUNARG_standard_validation");
 	
 	VkApplicationInfo appInfo = initializers::ApplicationInfo(config);
-	VkInstanceCreateInfo instanceInfo = initializers::CreateInstanceCreateInfo(appInfo, m_layers, m_extensions);
+	VkInstanceCreateInfo instanceInfo = initializers::InstanceCreateInfo(appInfo, m_layers, m_extensions);
 
 	ValidCheck(vkCreateInstance(&instanceInfo, NULL, &m_instance));
 }

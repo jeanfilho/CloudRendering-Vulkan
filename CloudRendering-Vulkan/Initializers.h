@@ -1,13 +1,13 @@
 #pragma once
 
 //Fwd. decl.
-class VulkanDevice;
 struct VulkanConfiguration;
 struct QueueFamilyIndices;
+struct SwapchainSupportDetails;
 
 namespace initializers
 {
-	VkInstanceCreateInfo CreateInstanceCreateInfo(
+	VkInstanceCreateInfo InstanceCreateInfo(
 		const VkApplicationInfo& appInfo,
 		const std::vector<const char*>& layers,
 		const std::vector<const char*>& extensions);
@@ -28,7 +28,13 @@ namespace initializers
 
 	VkWin32SurfaceCreateInfoKHR Win32SurfaceCreateInfo(GLFWwindow* window);
 
-	VkSwapchainCreateInfoKHR SwapchainCreateInfo(VulkanDevice* device, uint32_t imageCount, VkSurfaceFormatKHR surfaceFormat, VkPresentModeKHR presentMode, VkExtent2D extent);
+	VkSwapchainCreateInfoKHR SwapchainCreateInfo(VkSurfaceKHR surface, QueueFamilyIndices& indices, SwapchainSupportDetails swapchainSupport, uint32_t imageCount, VkSurfaceFormatKHR surfaceFormat, VkPresentModeKHR presentMode, VkExtent2D extent);
 
 	VkImageViewCreateInfo ImageViewCreateInfo(VkImage image, VkFormat format);
+
+	VkShaderModuleCreateInfo ShaderModuleCreateInfo(std::vector<char>& code);
+
+	VkPipelineShaderStageCreateInfo PipelineShaderStageCreateInfo(VkShaderModule module, VkShaderStageFlagBits stage);
+
+	VkFramebufferCreateInfo FramebufferCreateInfo(VkRenderPass renderPass, VkImageView* attachments, VkExtent2D& swapchainExtent);
 }
