@@ -167,9 +167,9 @@
     <ClCompile Include="SwapchainSupportDetails.cpp" />
     <ClCompile Include="Validation.cpp" />
     <ClCompile Include="VulkanBuffer.cpp" />
-    <ClCompile Include="VulkanCommandBuffer.cpp" />
     <ClCompile Include="VulkanCommandPool.cpp" />
     <ClCompile Include="VulkanDevice.cpp" />
+    <ClCompile Include="VulkanFence.cpp" />
     <ClCompile Include="VulkanFramebuffer.cpp" />
     <ClCompile Include="VulkanGraphicsPipeline.cpp" />
     <ClCompile Include="VulkanImageView.cpp" />
@@ -177,6 +177,7 @@
     <ClCompile Include="VulkanPhysicalDevice.cpp" />
     <ClCompile Include="VulkanPipelineLayout.cpp" />
     <ClCompile Include="VulkanRenderPass.cpp" />
+    <ClCompile Include="VulkanSemaphore.cpp" />
     <ClCompile Include="VulkanShaderModule.cpp" />
     <ClCompile Include="VulkanSurface.cpp" />
     <ClCompile Include="VulkanSwapchain.cpp" />
@@ -188,10 +189,10 @@
     <ClInclude Include="SwapchainSupportDetails.h" />
     <ClInclude Include="Validation.h" />
     <ClInclude Include="VulkanBuffer.h" />
-    <ClInclude Include="VulkanCommandBuffer.h" />
     <ClInclude Include="VulkanCommandPool.h" />
     <ClInclude Include="VulkanConfiguration.h" />
     <ClInclude Include="VulkanDevice.h" />
+    <ClInclude Include="VulkanFence.h" />
     <ClInclude Include="VulkanFramebuffer.h" />
     <ClInclude Include="VulkanGraphicsPipeline.h" />
     <ClInclude Include="VulkanImageView.h" />
@@ -199,6 +200,7 @@
     <ClInclude Include="VulkanPhysicalDevice.h" />
     <ClInclude Include="VulkanPipelineLayout.h" />
     <ClInclude Include="VulkanRenderPass.h" />
+    <ClInclude Include="VulkanSemaphore.h" />
     <ClInclude Include="VulkanShaderModule.h" />
     <ClInclude Include="VulkanSurface.h" />
     <ClInclude Include="VulkanSwapchain.h" />

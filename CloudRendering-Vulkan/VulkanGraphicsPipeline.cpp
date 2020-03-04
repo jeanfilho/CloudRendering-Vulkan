@@ -47,3 +47,8 @@ VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
 		vkDestroyPipeline(m_device->GetDevice(), m_graphicsPipeline, nullptr);
 	}
 }
+
+VkPipeline VulkanGraphicsPipeline::GetPipeline()
+{
+	return m_graphicsPipeline;
+}

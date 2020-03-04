@@ -23,19 +23,10 @@ VulkanDevice::VulkanDevice(VulkanInstance* instance, VulkanSurface* surface, Vul
 	vkGetDeviceQueue(m_device, indices.computeFamily, 0, &m_computeQueue);
 	vkGetDeviceQueue(m_device, indices.graphicsFamily, 0, &m_graphicsQueue);
 	vkGetDeviceQueue(m_device, indices.presentFamily, 0, &m_presentQueue);
-
-	VkCommandPoolCreateInfo computePoolInfo = initializers::CommandPoolCreateInfo(m_physicalDevice->GetQueueFamilyIndices().computeFamily);
-	ValidCheck(vkCreateCommandPool(m_device, &computePoolInfo, nullptr, &m_computeCommandPool));
 }
 
 VulkanDevice::~VulkanDevice()
 {
-
-	if (m_computeCommandPool != VK_NULL_HANDLE)
-	{
-		vkDestroyCommandPool(m_device, m_computeCommandPool, nullptr);
-	}
-
 	if (m_device != VK_NULL_HANDLE)
 	{
 		vkDestroyDevice(m_device, nullptr);
@@ -67,19 +58,12 @@ VkQueue VulkanDevice::GetComputeQueue()
 	return m_computeQueue;
 }
 
-VkCommandPool& VulkanDevice::GetComputeCommandPool()
+VkQueue VulkanDevice::GetGraphicsQueue()
 {
-	return m_computeCommandPool;
+	return m_graphicsQueue;
 }
 
-void VulkanDevice::GetComputeCommand(VkCommandBuffer* buffers, uint32_t count)
+VkQueue VulkanDevice::GetPresentQueue()
 {
-	VkCommandBufferAllocateInfo commandBufferAllocateInfo = initializers::CommandBufferAllocateInfo(m_computeCommandPool, count);
-
-	ValidCheck(vkAllocateCommandBuffers(m_device, &commandBufferAllocateInfo, buffers));
-}
-
-void VulkanDevice::FreeComputeCommand(VkCommandBuffer* buffers, uint32_t count)
-{
-	vkFreeCommandBuffers(m_device, m_computeCommandPool, count, buffers);
+	return m_presentQueue;
 }

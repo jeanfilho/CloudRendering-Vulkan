@@ -24,7 +24,7 @@ std::vector<VkCommandBuffer>& VulkanCommandPool::AllocateCommandBuffers(size_t s
 {
 	m_commandBuffers.resize(size);
 
-	VkCommandBufferAllocateInfo allocInfo = initializers::CommandBufferAllocateInfo(m_commandPool, m_commandBuffers.size());
+	VkCommandBufferAllocateInfo allocInfo = initializers::CommandBufferAllocateInfo(m_commandPool, static_cast<uint32_t>(m_commandBuffers.size()));
 	ValidCheck(vkAllocateCommandBuffers(m_device->GetDevice(), &allocInfo, m_commandBuffers.data()));
 
 	return m_commandBuffers;
@@ -32,7 +32,7 @@ std::vector<VkCommandBuffer>& VulkanCommandPool::AllocateCommandBuffers(size_t s
 
 void VulkanCommandPool::ClearCommandBuffers()
 {
-	vkFreeCommandBuffers(m_device->GetDevice(), m_commandPool, m_commandBuffers.size(), m_commandBuffers.data());
+	vkFreeCommandBuffers(m_device->GetDevice(), m_commandPool, static_cast<uint32_t>(m_commandBuffers.size()), m_commandBuffers.data());
 	m_commandBuffers.clear();
 }
 
