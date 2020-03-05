@@ -11,7 +11,7 @@ VulkanBuffer::VulkanBuffer(VulkanDevice* device, void* ptr, unsigned int element
 	m_elementSize = elementSize;
 	m_count = count;
 	m_totalSize = (VkDeviceSize)m_elementSize * m_count;
-	CreateBuffer();
+	AllocateBuffer();
 }
 
 VulkanBuffer::~VulkanBuffer()
@@ -42,7 +42,7 @@ void VulkanBuffer::SetData(size_t startIndex, size_t count)
 	memcpy(((char*)m_mappedMemory) + (startIndex * m_elementSize), ((char*)m_ptr) + (startIndex * m_elementSize), (size_t)m_elementSize * count);
 }
 
-void VulkanBuffer::CreateBuffer()
+void VulkanBuffer::AllocateBuffer()
 {
 	VkBufferCreateInfo bufferInfo = initializers::BufferCreateInfo(m_totalSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 

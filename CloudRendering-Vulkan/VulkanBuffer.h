@@ -13,7 +13,7 @@ public:
 	virtual void SetData(size_t startIndex, size_t count);
 
 private:
-	void CreateBuffer();
+	void AllocateBuffer();
 	uint32_t FindMemoryType(VkMemoryPropertyFlags props, uint32_t typeFilter);
 
 private:

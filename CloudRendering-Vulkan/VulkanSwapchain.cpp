@@ -4,14 +4,14 @@
 #include "VulkanDevice.h"
 #include "SwapchainSupportDetails.h"
 
-VulkanSwapchain::VulkanSwapchain(VulkanDevice* device, uint32_t width, uint32_t height)
+VulkanSwapchain::VulkanSwapchain(VulkanDevice* device, GLFWwindow* window)
 {
 	m_device = device;
 
 	SwapchainSupportDetails swapchainSupport = m_device->GetPhysicalDevice()->QuerySwapchainSupport(device->GetSurface());
 	VkSurfaceFormatKHR surfaceFormat = ChooseSurfaceFormat(swapchainSupport.formats);
 	VkPresentModeKHR presentMode = ChoosePresentMode(swapchainSupport.presentModes);
-	m_extent = ChooseExtent(swapchainSupport.capabilities, width, height);
+	m_extent = ChooseExtent(swapchainSupport.capabilities, window);
 	m_format = surfaceFormat.format;
 
 	uint32_t imageCount = swapchainSupport.capabilities.minImageCount + 1;
@@ -91,7 +91,7 @@ VkPresentModeKHR VulkanSwapchain::ChoosePresentMode(const std::vector<VkPresentM
 	return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-VkExtent2D VulkanSwapchain::ChooseExtent(const VkSurfaceCapabilitiesKHR& capabilities, uint32_t width, uint32_t height)
+VkExtent2D VulkanSwapchain::ChooseExtent(const VkSurfaceCapabilitiesKHR& capabilities, GLFWwindow* window)
 {
 	if (capabilities.currentExtent.width != UINT32_MAX)
 	{
@@ -99,6 +99,9 @@ VkExtent2D VulkanSwapchain::ChooseExtent(const VkSurfaceCapabilitiesKHR& capabil
 	}
 	else
 	{
+		int width, height;
+		glfwGetFramebufferSize(window, &width, &height);
+
 		VkExtent2D actualExtent = { width, height };
 		actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
 		actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);

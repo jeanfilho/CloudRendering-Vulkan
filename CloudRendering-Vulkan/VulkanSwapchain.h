@@ -8,10 +8,10 @@ class VulkanSwapchain
 private:
 	static VkSurfaceFormatKHR ChooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
 	static VkPresentModeKHR ChoosePresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
-	static VkExtent2D ChooseExtent(const VkSurfaceCapabilitiesKHR& capabilities, uint32_t width, uint32_t height);
+	static VkExtent2D ChooseExtent(const VkSurfaceCapabilitiesKHR& capabilities, GLFWwindow* window);
 
 public:
-	VulkanSwapchain(VulkanDevice* device, uint32_t width, uint32_t height);
+	VulkanSwapchain(VulkanDevice* device, GLFWwindow* window);
 	~VulkanSwapchain();
 
 	VkSwapchainKHR GetSwapchain();
