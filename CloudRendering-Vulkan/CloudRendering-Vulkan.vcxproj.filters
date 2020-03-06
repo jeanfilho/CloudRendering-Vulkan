@@ -143,11 +143,21 @@
     <ClInclude Include="VulkanFence.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Grid3D.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\shaders\FragmentShader.hlsl">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="..\shaders\VertexShader.hlsl" />
+    <None Include="..\shaders\ComputeShader.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="..\shaders\VertexShader.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

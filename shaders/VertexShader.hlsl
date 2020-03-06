@@ -1,5 +1,12 @@
 #pragma shader_stage(vertex)
 
+cbuffer MatrixBuffer
+{
+    matrix worldMatrix;
+    matrix viewMatrix;
+    matrix projectionMatrix;
+};
+
 struct VertexInputType
 {
     float4 position : POSITION;
@@ -15,7 +22,6 @@ struct PixelInputType
 PixelInputType main(VertexInputType input)
 {
     PixelInputType output;
-    
 
     // Change the position vector to be 4 units for proper matrix calculations.
     input.position.w = 1.0f;

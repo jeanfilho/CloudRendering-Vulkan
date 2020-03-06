@@ -15,6 +15,8 @@
 #include "VulkanSemaphore.h"
 #include "VulkanFence.h"
 
+#include "Grid3D.h"
+
 VulkanInstance* instance;
 VulkanPhysicalDevice* physicalDevice;
 VulkanDevice* device;
@@ -42,6 +44,9 @@ GLFWwindow* window;
 const int WIDTH = 800;
 const int HEIGHT = 800;
 const int MAX_FRAMES_IN_FLIGHT = 2;
+
+VulkanBuffer* cloudBuffer;
+Grid3D<float>* cloudGrid;
 
 std::vector<char> ReadFile(const std::string& filename)
 {
@@ -284,7 +289,7 @@ bool InitializeWindow()
 
 	glfwInit();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	//glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+	//glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
 	window = glfwCreateWindow(WIDTH, HEIGHT, "Cloud Renderer", nullptr, nullptr);
 	glfwSetFramebufferSizeCallback(window, FramebufferResizeCallback);
@@ -355,6 +360,11 @@ int main()
 	{
 		return 1;
 	}
+
+	// Load a cloud from a file
+	cloudGrid = Grid3D<float>::Load("../models/cloud-049.xyz");
+	cloudBuffer = new VulkanBuffer(device, cloudGrid->GetData(), static_cast<uint32_t>(cloudGrid->GetElementSize()), static_cast<uint32_t>(cloudGrid->GetSize()));
+
 	MainLoop();
 	Clear();
 
