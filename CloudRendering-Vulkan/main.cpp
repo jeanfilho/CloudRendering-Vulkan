@@ -177,7 +177,7 @@ void CreateSwapchain()
 
 	// Graphics pipeline;
 	std::vector<VulkanShaderModule*> shaderModules{ vertShaderModule, fragShaderModule };
-	graphicsPipeline = new VulkanGraphicsPipeline(device, pipelineLayout, renderPass, shaderModules);
+	graphicsPipeline = new VulkanGraphicsPipeline(device, swapchain, pipelineLayout, renderPass, shaderModules);
 
 	// Framebuffers
 	swapchainFramebuffers.reserve(swapchainImageViews.size());

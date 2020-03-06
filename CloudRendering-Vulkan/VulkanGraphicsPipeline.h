@@ -4,11 +4,12 @@ class VulkanDevice;
 class VulkanPipelineLayout;
 class VulkanRenderPass;
 class VulkanShaderModule;
+class VulkanSwapchain;
 
 class VulkanGraphicsPipeline
 {
 public:
-	VulkanGraphicsPipeline(VulkanDevice* device, VulkanPipelineLayout* pipelineLayout, VulkanRenderPass* renderPass, std::vector<VulkanShaderModule*>& shaderModules);
+	VulkanGraphicsPipeline(VulkanDevice* device, VulkanSwapchain* swapchain, VulkanPipelineLayout* pipelineLayout, VulkanRenderPass* renderPass, std::vector<VulkanShaderModule*>& shaderModules);
 	~VulkanGraphicsPipeline();
 
 	VkPipeline GetPipeline();
