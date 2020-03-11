@@ -20,6 +20,9 @@ public:
 	VkQueue GetComputeQueue();
 	VkQueue GetGraphicsQueue();
 	VkQueue GetPresentQueue();
+
+	uint32_t FindMemoryType(VkMemoryPropertyFlags props, uint32_t typeFilter);
+
 private:
 	VulkanInstance* m_instance = nullptr;
 	VulkanPhysicalDevice* m_physicalDevice = nullptr;

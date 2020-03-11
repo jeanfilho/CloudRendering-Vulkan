@@ -1,0 +1,28 @@
+#version 450
+
+layout (binding = 0, rgba32f) uniform writeonly image2D resultImage;
+layout (binding = 1) uniform CameraProperties
+{
+	vec3 position;
+	vec3 direction;
+    vec3 size;
+	int width, height;
+} cameraProperties;
+
+
+layout (binding = 2) uniform samplerBuffer gridSampler;
+layout (binding = 3) uniform GridProperties
+{
+    vec3 origin;
+    dvec3 size;
+    uvec3 voxelCount;
+    dvec3 voxelSize;
+} gridProperties;
+
+void main() 
+{
+    float gridValue = texelFetch(gridSampler, 300).x;
+
+    vec4 result = vec4(1.0f, 0, 0, 1.0f);
+	imageStore(resultImage, ivec2(gl_GlobalInvocationID.xy), result);
+}

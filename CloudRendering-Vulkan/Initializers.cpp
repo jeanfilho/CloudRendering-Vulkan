@@ -138,7 +138,7 @@ VkSwapchainCreateInfoKHR initializers::SwapchainCreateInfo(VkSurfaceKHR surface,
 	info.imageColorSpace = surfaceFormat.colorSpace;
 	info.imageExtent = extent;
 	info.imageArrayLayers = 1;
-	info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
 	uint32_t queueFamilyIndices[] = { indices.graphicsFamily, indices.presentFamily };
 	if (indices.graphicsFamily != indices.presentFamily)
@@ -218,6 +218,166 @@ VkFramebufferCreateInfo initializers::FramebufferCreateInfo(VkRenderPass renderP
 	info.width = swapchainExtent.width;
 	info.height = swapchainExtent.height;
 	info.layers = 1;
+
+	return info;
+}
+
+VkDescriptorSetLayoutCreateInfo initializers::DescriptorSetLayoutCreateInfo(std::vector<VkDescriptorSetLayoutBinding>& bindings)
+{
+	VkDescriptorSetLayoutCreateInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	info.pBindings = bindings.data();
+	info.bindingCount = static_cast<uint32_t>(bindings.size());
+
+	return info;
+}
+
+VkDescriptorSetLayoutBinding initializers::DescriptorSetLayoutBinding(uint32_t binding, VkShaderStageFlags flags, VkDescriptorType type, uint32_t count /*= 1*/)
+{
+	VkDescriptorSetLayoutBinding info{};
+
+	info.binding = binding;
+	info.descriptorType = type;
+	info.descriptorCount = 1;
+	info.stageFlags = flags;
+
+	return info;
+}
+
+VkDescriptorSetAllocateInfo initializers::DescriptorSetAllocateInfo(VkDescriptorPool descriptorPool, const VkDescriptorSetLayout* setLayouts, uint32_t descriptorSetCount)
+{
+	VkDescriptorSetAllocateInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	info.descriptorPool = descriptorPool;
+	info.pSetLayouts = setLayouts;
+	info.descriptorSetCount = descriptorSetCount;
+
+	return info;
+}
+
+VkDescriptorPoolCreateInfo initializers::DescriptorPoolCreateInfo(std::vector<VkDescriptorPoolSize>& poolSizes, uint32_t maxSets)
+{
+	VkDescriptorPoolCreateInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	info.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+	info.pPoolSizes = poolSizes.data();
+	info.maxSets = maxSets;
+
+	return info;
+}
+
+VkDescriptorPoolSize initializers::DescriptorPoolSize(VkDescriptorType type, uint32_t descriptorCount)
+{
+	VkDescriptorPoolSize size{};
+
+	size.descriptorCount = descriptorCount;
+	size.type = type;
+
+	return size;
+}
+
+VkCommandBufferBeginInfo initializers::CommandBufferBeginInfo()
+{
+	VkCommandBufferBeginInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	return info;
+}
+
+VkSubmitInfo initializers::SubmitInfo()
+{
+	VkSubmitInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	return info;
+}
+
+VkWriteDescriptorSet initializers::WriteDescriptorSet(VkDescriptorSet dstSet, VkDescriptorType type, uint32_t binding, VkDescriptorBufferInfo* bufferInfo, uint32_t descriptorCount /*= 1*/)
+{
+	VkWriteDescriptorSet info{};
+	info.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	info.dstSet = dstSet;
+	info.descriptorType = type;
+	info.dstBinding = binding;
+	info.pBufferInfo = bufferInfo;
+	info.descriptorCount = descriptorCount;
+
+	return info;
+}
+
+VkWriteDescriptorSet initializers::WriteDescriptorSet(VkDescriptorSet dstSet, VkDescriptorType type, uint32_t binding, VkDescriptorBufferInfo* bufferInfo, VkBufferView* texelBufferView, uint32_t descriptorCount)
+{
+	VkWriteDescriptorSet info = WriteDescriptorSet(dstSet, type, binding, bufferInfo, descriptorCount);
+	info.pTexelBufferView = texelBufferView;
+	return info;
+}
+
+VkWriteDescriptorSet initializers::WriteDescriptorSet(VkDescriptorSet dstSet, VkDescriptorType type, uint32_t binding, VkDescriptorImageInfo* imageInfo, uint32_t descriptorCount /*= 1*/)
+{
+	VkWriteDescriptorSet info{};
+	info.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	info.dstSet = dstSet;
+	info.descriptorType = type;
+	info.dstBinding = binding;
+	info.pImageInfo = imageInfo;
+	info.descriptorCount = descriptorCount;
+
+	return info;
+}
+
+VkCopyDescriptorSet initializers::CopyDescriptorSet()
+{
+	VkCopyDescriptorSet info{};
+	info.sType = VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET;
+
+	return info;
+}
+
+VkDescriptorBufferInfo initializers::DescriptorBufferInfo(VkBuffer buffer, VkDeviceSize offset, VkDeviceSize range)
+{
+	VkDescriptorBufferInfo info{};
+	info.buffer = buffer;
+	info.offset = offset;
+	info.range = range;
+
+	return info;
+}
+
+VkDescriptorImageInfo initializers::DescriptorImageInfo(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout)
+{
+	VkDescriptorImageInfo info{};
+	info.sampler = sampler;
+	info.imageView = imageView;
+	info.imageLayout = imageLayout;
+	return info;
+}
+
+VkBufferViewCreateInfo initializers::BufferViewCreateInfo(VkBuffer buffer, VkFormat format, VkDeviceSize offset, VkDeviceSize range, VkBufferViewCreateFlags flags)
+{
+	VkBufferViewCreateInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO;
+	info.buffer = buffer;
+	info.format = format;
+	info.offset = offset;
+	info.range = range;
+	info.flags = flags;
+
+	return info;
+}
+
+VkImageCreateInfo initializers::ImageCreateInfo(VkImageType imageType, VkFormat format, VkExtent3D extent, uint32_t mipLevels, uint32_t arrayLayers, VkSampleCountFlagBits samples, VkImageUsageFlags usage, VkImageCreateFlags flags /*= 0*/)
+{
+	VkImageCreateInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	info.flags = flags;
+	info.imageType = imageType;
+	info.format = format;
+	info.extent = extent;
+	info.mipLevels = mipLevels;
+	info.arrayLayers = arrayLayers;
+	info.samples = samples;
+	info.usage = usage;
+	info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 	return info;
 }

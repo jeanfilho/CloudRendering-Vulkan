@@ -167,11 +167,16 @@
     <ClCompile Include="SwapchainSupportDetails.cpp" />
     <ClCompile Include="Validation.cpp" />
     <ClCompile Include="VulkanBuffer.cpp" />
+    <ClCompile Include="VulkanBufferView.cpp" />
     <ClCompile Include="VulkanCommandPool.cpp" />
+    <ClCompile Include="VulkanComputePipeline.cpp" />
+    <ClCompile Include="VulkanDescriptorPool.cpp" />
+    <ClCompile Include="VulkanDescriptorSetLayout.cpp" />
     <ClCompile Include="VulkanDevice.cpp" />
     <ClCompile Include="VulkanFence.cpp" />
     <ClCompile Include="VulkanFramebuffer.cpp" />
     <ClCompile Include="VulkanGraphicsPipeline.cpp" />
+    <ClCompile Include="VulkanImage.cpp" />
     <ClCompile Include="VulkanImageView.cpp" />
     <ClCompile Include="VulkanInstance.cpp" />
     <ClCompile Include="VulkanPhysicalDevice.cpp" />
@@ -190,12 +195,17 @@
     <ClInclude Include="SwapchainSupportDetails.h" />
     <ClInclude Include="Validation.h" />
     <ClInclude Include="VulkanBuffer.h" />
+    <ClInclude Include="VulkanBufferView.h" />
     <ClInclude Include="VulkanCommandPool.h" />
+    <ClInclude Include="VulkanComputePipeline.h" />
     <ClInclude Include="VulkanConfiguration.h" />
+    <ClInclude Include="VulkanDescriptorPool.h" />
+    <ClInclude Include="VulkanDescriptorSetLayout.h" />
     <ClInclude Include="VulkanDevice.h" />
     <ClInclude Include="VulkanFence.h" />
     <ClInclude Include="VulkanFramebuffer.h" />
     <ClInclude Include="VulkanGraphicsPipeline.h" />
+    <ClInclude Include="VulkanImage.h" />
     <ClInclude Include="VulkanImageView.h" />
     <ClInclude Include="VulkanInstance.h" />
     <ClInclude Include="VulkanPhysicalDevice.h" />
@@ -207,23 +217,7 @@
     <ClInclude Include="VulkanSwapchain.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\shaders\FragmentShader.hlsl">
-      <FileType>Document</FileType>
-    </None>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="..\shaders\ComputeShader.hlsl">
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Compute</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
-      <FileType>Document</FileType>
-    </None>
-    <FxCompile Include="..\shaders\VertexShader.hlsl" />
+    <None Include="..\shaders\ComputeTest.comp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

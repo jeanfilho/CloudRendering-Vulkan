@@ -18,6 +18,9 @@ public:
 	size_t GetElementSize();
 	size_t GetSize();
 
+	glm::dvec3 GetVoxelSize();
+	glm::uvec3 GetVoxelCount();
+
 	void* GetData();
 	void Copy(void* src, size_t size);
 
@@ -25,11 +28,10 @@ public:
 
 private:
 	std::vector<T> m_data;
-	size_t m_totalSize;
 
-	unsigned int m_sizeX;
-	unsigned int m_sizeY;
-	unsigned int m_sizeZ;
+	unsigned int m_countX;
+	unsigned int m_countY;
+	unsigned int m_countZ;
 
 	double m_voxelSizeX;
 	double m_voxelSizeY;
@@ -57,7 +59,7 @@ inline Grid3D<T>* Grid3D<T>::Load(const std::string& filename)
 
 	Grid3D<T>* grid = new Grid3D<T>(sizeX, sizeY, sizeZ, voxelSizeX, voxelSizeY, voxelSizeZ);
 
-	in.read(reinterpret_cast<char*>(grid->m_data.data()), sizeof(T) * sizeX * sizeY * sizeZ);
+	in.read(reinterpret_cast<char*>(grid->m_data.data()), sizeof(T)* sizeX* sizeY* sizeZ);
 	in.close();
 
 	return grid;
@@ -66,16 +68,15 @@ inline Grid3D<T>* Grid3D<T>::Load(const std::string& filename)
 template<typename T>
 inline Grid3D<T>::Grid3D(unsigned int sizeX, unsigned int sizeY, unsigned int sizeZ, double voxelSizeX, double voxelSizeY, double voxelSizeZ)
 {
-	m_sizeX = sizeX;
-	m_sizeY = sizeY;
-	m_sizeZ = sizeZ;
+	m_countX = sizeX;
+	m_countY = sizeY;
+	m_countZ = sizeZ;
 
 	m_voxelSizeX = voxelSizeX;
 	m_voxelSizeY = voxelSizeY;
 	m_voxelSizeZ = voxelSizeZ;
 
-	m_totalSize = static_cast<size_t>(m_sizeX) * static_cast<size_t>(m_sizeY) * static_cast<size_t>(m_sizeZ);
-	m_data.resize(m_totalSize);
+	m_data.resize(static_cast<size_t>(m_countX)* static_cast<size_t>(m_countY)* static_cast<size_t>(m_countZ));
 }
 
 template<typename T>
@@ -86,9 +87,9 @@ inline Grid3D<T>::~Grid3D()
 template<typename T>
 inline T& Grid3D<T>::operator()(size_t x, size_t y, size_t z)
 {
-	if (x < m_sizeX && y < m_sizeY && z < m_sizeZ)
+	if (x < m_countX && y < m_countY && z < m_countZ)
 	{
-		return m_data[x + y * m_sizeX + z * m_sizeX * m_sizeY];
+		return m_data[x + y * m_countX + z * m_countX * m_countY];
 	}
 
 	throw std::out_of_range("Index out of 3D grid bounds");
@@ -98,13 +99,25 @@ inline T& Grid3D<T>::operator()(size_t x, size_t y, size_t z)
 template<typename T>
 inline size_t Grid3D<T>::GetByteSize()
 {
-	return m_totalSize * sizeof(T);
+	return m_data.size() * sizeof(T);
 }
 
 template<typename T>
 inline size_t Grid3D<T>::GetSize()
 {
-	return m_totalSize;
+	return m_data.size();
+}
+
+template<typename T>
+inline glm::dvec3 Grid3D<T>::GetVoxelSize()
+{
+	return glm::dvec3(m_voxelSizeX, m_voxelSizeY, m_voxelSizeZ);
+}
+
+template<typename T>
+inline glm::uvec3 Grid3D<T>::GetVoxelCount()
+{
+	return glm::uvec3(m_countX, m_countY, m_countZ);
 }
 
 template<typename T>
@@ -122,6 +135,7 @@ inline size_t Grid3D<T>::GetElementSize()
 template<typename T>
 inline void Grid3D<T>::Copy(void* src, size_t size)
 {
+	m_data.resize(size / sizeof(T));
 	memcpy(m_data.data(), src, size);
 }
 
@@ -129,12 +143,12 @@ template<typename T>
 inline void Grid3D<T>::Save(const std::string& filename)
 {
 	std::ofstream out(filename, std::ofstream::out | std::ofstream::binary);
-	out.write(reinterpret_cast<char*>(&m_sizeX), sizeof(unsigned int));
-	out.write(reinterpret_cast<char*>(&m_sizeY), sizeof(unsigned int));
-	out.write(reinterpret_cast<char*>(&m_sizeZ), sizeof(unsigned int));
+	out.write(reinterpret_cast<char*>(&m_countX), sizeof(unsigned int));
+	out.write(reinterpret_cast<char*>(&m_countY), sizeof(unsigned int));
+	out.write(reinterpret_cast<char*>(&m_countZ), sizeof(unsigned int));
 	out.write(reinterpret_cast<char*>(&m_voxelSizeX), sizeof(double));
 	out.write(reinterpret_cast<char*>(&m_voxelSizeY), sizeof(double));
 	out.write(reinterpret_cast<char*>(&m_voxelSizeZ), sizeof(double));
-	out.write(reinterpret_cast<char*>(m_data.data()), sizeof(float)* m_sizeX* m_sizeY* m_sizeZ);
+	out.write(reinterpret_cast<char*>(m_data.data()), sizeof(T)* m_countX* m_countY* m_countZ);
 	out.close();
 }

@@ -7,7 +7,7 @@ class VulkanSwapchain;
 class VulkanPipelineLayout
 {
 public:
-	VulkanPipelineLayout(VulkanDevice* device, VulkanSwapchain* swapchain);
+	VulkanPipelineLayout(VulkanDevice* device, VulkanSwapchain* swapchain, std::vector<VkDescriptorSetLayout>& setLayouts, std::vector<VkPushConstantRange> pushConstantRanges);
 	~VulkanPipelineLayout();
 
 	VkPipelineLayout& GetPipelineLayout();

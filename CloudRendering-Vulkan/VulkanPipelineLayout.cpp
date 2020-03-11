@@ -4,22 +4,18 @@
 #include "VulkanDevice.h"
 #include "VulkanSwapchain.h"
 
-VulkanPipelineLayout::VulkanPipelineLayout(VulkanDevice* device, VulkanSwapchain* swapchain)
+VulkanPipelineLayout::VulkanPipelineLayout(VulkanDevice* device, VulkanSwapchain* swapchain, std::vector<VkDescriptorSetLayout>& setLayouts, std::vector<VkPushConstantRange> pushConstantRanges)
 {
 	m_device = device;
 
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount = 0; // Optional
-	pipelineLayoutInfo.pSetLayouts = nullptr; // Optional
-	pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
-	pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
+	pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
+	pipelineLayoutInfo.pSetLayouts = setLayouts.data();
+	pipelineLayoutInfo.pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size());
+	pipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
 
-	if (vkCreatePipelineLayout(m_device->GetDevice(), &pipelineLayoutInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS)
-	{
-		throw std::runtime_error("failed to create pipeline layout!");
-	}
-
+	ValidCheck(vkCreatePipelineLayout(m_device->GetDevice(), &pipelineLayoutInfo, nullptr, &m_pipelineLayout));
 }
 
 VulkanPipelineLayout::~VulkanPipelineLayout()

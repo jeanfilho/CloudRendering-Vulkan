@@ -37,4 +37,34 @@ namespace initializers
 	VkPipelineShaderStageCreateInfo PipelineShaderStageCreateInfo(VkShaderModule module, VkShaderStageFlagBits stage);
 
 	VkFramebufferCreateInfo FramebufferCreateInfo(VkRenderPass renderPass, VkImageView* attachments, VkExtent2D& swapchainExtent);
+
+	VkDescriptorSetLayoutCreateInfo DescriptorSetLayoutCreateInfo(std::vector<VkDescriptorSetLayoutBinding>& bindings);
+
+	VkDescriptorSetLayoutBinding DescriptorSetLayoutBinding(uint32_t binding, VkShaderStageFlags flags, VkDescriptorType type, uint32_t count = 1);
+
+	VkDescriptorSetAllocateInfo DescriptorSetAllocateInfo(VkDescriptorPool descriptorPool, const VkDescriptorSetLayout* setLayouts, uint32_t descriptorSetCount);
+
+	VkDescriptorPoolCreateInfo DescriptorPoolCreateInfo(std::vector<VkDescriptorPoolSize>& poolSizes, uint32_t maxSets);
+
+	VkDescriptorPoolSize DescriptorPoolSize(VkDescriptorType type, uint32_t count);
+
+	VkCommandBufferBeginInfo CommandBufferBeginInfo();
+
+	VkSubmitInfo SubmitInfo();
+
+	VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet dstSet, VkDescriptorType type, uint32_t binding, VkDescriptorBufferInfo* bufferInfo, uint32_t descriptorCount = 1);
+
+	VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet dstSet, VkDescriptorType type, uint32_t binding, VkDescriptorBufferInfo* bufferInfo, VkBufferView* texelBufferView, uint32_t descriptorCount = 1);
+
+	VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet dstSet, VkDescriptorType type, uint32_t binding, VkDescriptorImageInfo* bufferInfo, uint32_t descriptorCount = 1);
+
+	VkCopyDescriptorSet CopyDescriptorSet();
+
+	VkDescriptorBufferInfo DescriptorBufferInfo(VkBuffer buffer, VkDeviceSize offset, VkDeviceSize range);
+
+	VkDescriptorImageInfo DescriptorImageInfo(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout);
+
+	VkBufferViewCreateInfo BufferViewCreateInfo(VkBuffer buffer, VkFormat format, VkDeviceSize offset, VkDeviceSize range, VkBufferViewCreateFlags flags);
+
+	VkImageCreateInfo ImageCreateInfo(VkImageType imageType, VkFormat format, VkExtent3D extent, uint32_t mipLevels, uint32_t arrayLayers, VkSampleCountFlagBits samples, VkImageUsageFlags usage, VkImageCreateFlags flags = 0);
 }

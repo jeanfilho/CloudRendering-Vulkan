@@ -7,7 +7,7 @@ VulkanCommandPool::VulkanCommandPool(VulkanDevice* device, uint32_t queueFamilyI
 {
 	m_device = device;
 
-	VkCommandPoolCreateInfo commandPoolInfo = initializers::CommandPoolCreateInfo(queueFamilyIndex);
+	VkCommandPoolCreateInfo commandPoolInfo = initializers::CommandPoolCreateInfo(queueFamilyIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 
 	ValidCheck(vkCreateCommandPool(m_device->GetDevice(), &commandPoolInfo, nullptr, &m_commandPool));
 }

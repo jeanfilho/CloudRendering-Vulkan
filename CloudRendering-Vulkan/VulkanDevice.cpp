@@ -67,3 +67,17 @@ VkQueue VulkanDevice::GetPresentQueue()
 {
 	return m_presentQueue;
 }
+
+uint32_t VulkanDevice::FindMemoryType(VkMemoryPropertyFlags props, uint32_t typeFilter)
+{
+	for (uint32_t i = 0; i < m_physicalDevice->GetPhysicalDeviceMemoryProperties().memoryTypeCount; i++)
+	{
+		if (typeFilter & (1 << i) && (m_physicalDevice->GetPhysicalDeviceMemoryProperties().memoryTypes[i].propertyFlags & props) == props)
+		{
+			return i;
+		}
+	}
+
+	assert(0 && "No available memory properties");
+	return UINT32_MAX;
+}
