@@ -59,7 +59,12 @@ inline Grid3D<T>* Grid3D<T>::Load(const std::string& filename)
 
 	Grid3D<T>* grid = new Grid3D<T>(sizeX, sizeY, sizeZ, voxelSizeX, voxelSizeY, voxelSizeZ);
 
-	in.read(reinterpret_cast<char*>(grid->m_data.data()), sizeof(T)* sizeX* sizeY* sizeZ);
+	in.read(reinterpret_cast<char*>(grid->m_data.data()), sizeof(T) * sizeX * sizeY * sizeZ);
+	if (!in.eof())
+	{
+		std::cout << "There was still data left in the .xyz file";
+	}
+
 	in.close();
 
 	return grid;
@@ -76,7 +81,7 @@ inline Grid3D<T>::Grid3D(unsigned int sizeX, unsigned int sizeY, unsigned int si
 	m_voxelSizeY = voxelSizeY;
 	m_voxelSizeZ = voxelSizeZ;
 
-	m_data.resize(static_cast<size_t>(m_countX)* static_cast<size_t>(m_countY)* static_cast<size_t>(m_countZ));
+	m_data.resize(static_cast<size_t>(m_countX) * static_cast<size_t>(m_countY) * static_cast<size_t>(m_countZ));
 }
 
 template<typename T>
@@ -149,6 +154,6 @@ inline void Grid3D<T>::Save(const std::string& filename)
 	out.write(reinterpret_cast<char*>(&m_voxelSizeX), sizeof(double));
 	out.write(reinterpret_cast<char*>(&m_voxelSizeY), sizeof(double));
 	out.write(reinterpret_cast<char*>(&m_voxelSizeZ), sizeof(double));
-	out.write(reinterpret_cast<char*>(m_data.data()), sizeof(T)* m_countX* m_countY* m_countZ);
+	out.write(reinterpret_cast<char*>(m_data.data()), sizeof(T) * m_countX * m_countY * m_countZ);
 	out.close();
 }

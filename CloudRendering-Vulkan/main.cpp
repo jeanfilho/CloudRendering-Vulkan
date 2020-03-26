@@ -22,6 +22,8 @@
 #include "VulkanDescriptorPool.h"
 
 #include "Grid3D.h"
+#include "UniformBuffers.h"
+#include "Tests.h"
 
 //--------------------------------------------------------------
 // Globals
@@ -43,7 +45,7 @@ VulkanShaderModule* computeShader;
 VulkanImage* computeResult;
 VulkanImageView* computeResultView;
 
-Grid3D<float>* cloudData;
+Grid3D<double>* cloudData;
 VulkanImage* cloudImage;
 VulkanImageView* cloudImageView;
 VulkanSampler* cloudSampler;
@@ -62,51 +64,13 @@ const int MAX_FRAMES_IN_FLIGHT = 1;
 //--------------------------------------------------------------
 // Shader Resources
 //--------------------------------------------------------------
-struct CameraProperties
-{
-	glm::vec3 position = glm::vec3(0, 0, -100);
-	int width = 1920;
-	glm::vec3 forward = glm::vec3(0, 0, 1);
-	int height = 1080;
-	glm::vec3 right = glm::vec3(1, 0, 0);
-	float nearPlane = 50.0f;
-	glm::vec3 up = glm::vec3(0, 1, 0);
-	float pixelSizeX = 1;
-	float pixelSizeY = 1;
-
-} cameraProperties;
+CameraProperties cameraProperties;
 VulkanBuffer* cameraPropertiesBuffer;
 
-struct CloudProperties
-{
-	glm::vec4 bounds[2]{ glm::uvec4(0) ,glm::uvec4(0) };
-	glm::uvec4 voxelCount = glm::uvec4(0);
-	float maxExtinction = 0.6f;
-
-} cloudProperties;
+CloudProperties cloudProperties;
 VulkanBuffer* cloudPropertiesBuffer;
 
-struct Parameters
-{
-public:
-	unsigned int maxRayBounces = 5;
-	float phaseG = 0.67f; // [-1, 1]
-private:
-	float phaseOnePlusG2 = 1.0f + phaseG * phaseG;
-	float phaseOneMinusG2 = 1.0f - phaseG * phaseG;
-	float phaseOneOver2G = 0.5f / phaseG;
-
-public:
-	void SetPhaseG(float value)
-	{
-		if (value > 1 || value < -1) return;
-
-		phaseG = 0.67f;
-		phaseOnePlusG2 = 1.0f + phaseG * phaseG;
-		phaseOneMinusG2 = 1.0f - phaseG * phaseG;
-		phaseOneOver2G = 0.5f / phaseG;
-	}
-} parameters;
+Parameters parameters;
 VulkanBuffer* parametersBuffer;
 
 struct PushConstanst
@@ -412,7 +376,7 @@ bool IntializeVulkan()
 	parametersBuffer = new VulkanBuffer(device, &parameters, sizeof(Parameters), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 	cloudImage = new VulkanImage(
 		device,
-		VK_FORMAT_R16_SFLOAT,
+		VK_FORMAT_R32_SFLOAT,
 		VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
 		static_cast<uint32_t>(cloudProperties.voxelCount.x),
 		static_cast<uint32_t>(cloudProperties.voxelCount.y),
@@ -607,29 +571,36 @@ bool InitializeWindow()
 	return true;
 }
 
-
 int main()
 {
 	// Load cloud from a file
 	std::cout << "Loading cloud file...";
 
-	//cloudData = Grid3D<float>::Load("../models/cloud-1090.xyz");
-	cloudData = new Grid3D<float>(2, 2, 2, 20, 20, 20);
+	cloudData = Grid3D<double>::Load("../models/cloud-1090.xyz");
+	//cloudData = new Grid3D<float>(2, 2, 2, 200, 200, 200);
+	//std::vector<float> testData =
+	//{ 1, 0, 0, 0,
+	//	0, 0, 0, 0 };
+	//cloudData->Copy(testData.data(), testData.size() * sizeof(float));
 
-	std::vector<float> testData =
-	{ 1, 0, 0, 0,
-		0, 0, 0, 0 };
-	cloudData->Copy(testData.data(), testData.size() * sizeof(float));
+	glm::vec3 cloudSize{
+		cloudData->GetVoxelSize().x * 500,
+		cloudData->GetVoxelSize().y * 500,
+		cloudData->GetVoxelSize().z * 500 };
 
-	cloudProperties.voxelCount = glm::uvec4(cloudData->GetVoxelCount(),0);
-	cloudProperties.bounds[0] = glm::vec4(0, 0, 0, 0);
-	cloudProperties.bounds[1] = glm::vec4(
-		cloudData->GetVoxelSize().x * cloudProperties.voxelCount.x,
-		cloudData->GetVoxelSize().y * cloudProperties.voxelCount.y,
-		cloudData->GetVoxelSize().z * cloudProperties.voxelCount.z,
+	cloudProperties.voxelCount = glm::uvec4(cloudData->GetVoxelCount(), 0);
+	cloudProperties.bounds[0] = glm::vec4(
+		-cloudSize.x/2 * cloudProperties.voxelCount.x,
+		-cloudSize.y/2 * cloudProperties.voxelCount.y,
+		-cloudSize.z/2 * cloudProperties.voxelCount.z,
 		0
-	);
+		);
+	cloudProperties.bounds[1] = -cloudProperties.bounds[0];
 	std::cout << "OK" << std::endl;
+
+#ifdef _DEBUG
+	tests::RunTests();
+#endif
 	
 
 	// Initialize GLFW

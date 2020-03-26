@@ -15,7 +15,7 @@ struct Ray
 //---------------------------------------------------------
 // Constants
 //---------------------------------------------------------
-const vec4 SKY_COLOR = vec4(0.53f, 0.81f, 0.92f, 1.0f);
+const vec4 SKY_COLOR = vec4(0.53f/3, 0.81f/3, 0.92f/3, 1.0f);
 const vec3 SUNLIGHT_DIRECTION = vec3(0.0f, -1.0f, 0.0f);
 const vec4 SUNLIGHT_COLOR = vec4(1.0f, 1.0f, 1.0f, 1.0f);
 const float PI = 3.14159265359;
@@ -92,12 +92,13 @@ int getGridOffsetIndex(vec3 pos)
     return int(x + y * cloudProperties.voxelCount.x + z * cloudProperties.voxelCount.x * cloudProperties.voxelCount.y);
 }
 
-vec3 getCameraDirection(in ivec2 coord)
+void getCameraRay(in ivec2 coord, out Ray ray)
 {
-    vec3 rayDir = cameraProperties.forward * cameraProperties.nearPlane
+    ray.dir = cameraProperties.forward * cameraProperties.nearPlane
                     + cameraProperties.right  * cameraProperties.pixelSizeX * (coord.x - cameraProperties.width/2)
                     - cameraProperties.up * cameraProperties.pixelSizeY * (coord.y - cameraProperties.height/2);
-    return normalize(rayDir);
+    ray.pos = ray.dir + cameraProperties.position;
+    ray.dir = normalize(ray.dir);
 }
 
 //https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-box-intersection
@@ -193,8 +194,7 @@ void createOrthonormalBasis(in const vec3 dir, out vec3 t0, out vec3 t1)
 //---------------------------------------------------------
 
 #ifdef USE_MARSAGLIA
-//shared uint rng_state;
-uint rng_state;
+shared uint rng_state;
 uint rand_xorshift()
 {
 	// Xorshift algorithm from George Marsaglia's paper
@@ -356,49 +356,49 @@ void main()
     Ray ray;
 
     // Get ray direction and volume entry point
-    ray.dir = getCameraDirection(pixelCoord);
+    getCameraRay(pixelCoord, ray);
     if(!intersectCloud(ray, ray.pos))
     {
         result = SKY_COLOR;        
     }
     else
     {
-//         uint i = 0;
-//         vec4 radiance;
-//         vec4 currentRadiance;
-//         vec4 transmittance;
-//         vec4 weight;
-//         Ray currentRay;
+        uint i = 0;
+        vec4 radiance;
+        vec4 currentRadiance;
+        vec4 transmittance;
+        vec4 weight;
+        Ray currentRay;
 
-// #ifdef USE_MARSAGLIA
-//         initializeRandom(uint(pushConstants.randomSeed));
-// #endif
+#ifdef USE_MARSAGLIA
+        initializeRandom(uint(pushConstants.randomSeed + gl_GlobalInvocationID.x  + gl_GlobalInvocationID.y * cameraProperties.height));
+#endif
 
-//         // Path tracer loop
-//         while(i < parameters.maxRayBounces)
-//         {
-//             currentRay = ray;
+        // Path tracer loop
+        while(i < parameters.maxRayBounces)
+        {
+            currentRay = ray;
 
-//             // Scatter point
-//             generateSample(currentRay.dir, ray.dir, radiance);
+            // Scatter point
+            generateSample(currentRay.dir, ray.dir, radiance);
 
-//             // Move along scatter direction and accumulate radiance
-//             if(!integrateCloud(ray, radiance, transmittance, weight))
-//             {
-//                 break;
-//             }
+            // Move along scatter direction and accumulate radiance
+            //result = vec4(float(i) / (parameters.maxRayBounces + 1),0,0,0);
+            result = vec4(ray.dir,1);
+            if(!integrateCloud(ray, radiance, transmittance, weight))
+            {  
+                break;
+            }
 
-//             // Sample radiance from new direction
-//             evaluateSample(currentRay.dir, ray.dir, radiance);
+            // Sample radiance from new direction
+            evaluateSample(currentRay.dir, ray.dir, radiance);
 
-//             currentRadiance += weight * throughput * radiance;
-//             throughput *= transmittance;
+            currentRadiance += weight * throughput * radiance;
+            throughput *= transmittance;
             
-//             i++;
-//         }
+            i++;
+        }
     }
-
-    result = vec4(ray.dir.x, ray.dir.y, 0,1);
     
     imageStore(resultImage, pixelCoord, result);
 
