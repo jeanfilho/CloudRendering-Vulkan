@@ -1,11 +1,13 @@
 #pragma once
 
 class VulkanDevice;
+class VulkanImage;
 
 class VulkanImageView
 {
 public:
-	VulkanImageView(VulkanDevice* device, VkImage image, VkFormat format);
+	VulkanImageView(VulkanDevice* device, VulkanImage* image);
+	VulkanImageView(VulkanDevice* device, VkImage image, VkFormat format, VkImageViewType viewType);
 	~VulkanImageView();
 
 	VkImageView GetImageView();

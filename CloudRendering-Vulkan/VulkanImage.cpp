@@ -3,12 +3,23 @@
 
 #include "VulkanDevice.h"
 
-VulkanImage::VulkanImage(VulkanDevice* device, uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage)
+VulkanImage::VulkanImage(VulkanDevice* device, VkFormat format, VkImageUsageFlags usage, uint32_t width, uint32_t height /*= 1*/, uint32_t depth /*= 1*/)
 {
 	m_device = device;
 	m_format = format;
-	m_extents = { width, height, 1 };
-	VkImageCreateInfo imageInfo = initializers::ImageCreateInfo(VK_IMAGE_TYPE_2D, m_format, m_extents, 1, 1, VK_SAMPLE_COUNT_1_BIT, usage);
+	m_extents = { width, height, depth };
+
+	VkImageType type = VK_IMAGE_TYPE_1D;
+	if (depth > 1)
+	{
+		type = VK_IMAGE_TYPE_3D;
+	}
+	else if(height > 1)
+	{
+		type = VK_IMAGE_TYPE_2D;
+	}
+
+	VkImageCreateInfo imageInfo = initializers::ImageCreateInfo(type, m_format, m_extents, 1, 1, VK_SAMPLE_COUNT_1_BIT, usage);
 
 	ValidCheck(vkCreateImage(m_device->GetDevice(), &imageInfo, nullptr, &m_image));
 
@@ -48,7 +59,7 @@ VkFormat VulkanImage::GetFormat()
 	return m_format;
 }
 
-VkExtent3D VulkanImage::GetExtents()
+VkExtent3D VulkanImage::GetExtent()
 {
 	return m_extents;
 }

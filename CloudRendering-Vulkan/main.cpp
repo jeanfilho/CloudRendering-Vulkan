@@ -8,6 +8,7 @@
 #include "VulkanSwapchain.h"
 #include "VulkanImage.h"
 #include "VulkanImageView.h"
+#include "VulkanSampler.h"
 #include "VulkanShaderModule.h"
 #include "VulkanPipelineLayout.h"
 #include "VulkanRenderPass.h"
@@ -22,10 +23,12 @@
 
 #include "Grid3D.h"
 
+//--------------------------------------------------------------
+// Globals
+//--------------------------------------------------------------
 VulkanInstance* instance;
 VulkanPhysicalDevice* physicalDevice;
 VulkanDevice* device;
-VulkanBuffer* buffer;
 VulkanSurface* surface;
 VulkanSwapchain* swapchain;
 std::vector<VulkanImageView> swapchainImageViews;
@@ -41,8 +44,9 @@ VulkanImage* computeResult;
 VulkanImageView* computeResultView;
 
 Grid3D<float>* cloudData;
-VulkanBuffer* cloudBuffer;
-VulkanBufferView* cloudBufferView;
+VulkanImage* cloudImage;
+VulkanImageView* cloudImageView;
+VulkanSampler* cloudSampler;
 
 std::vector<VulkanSemaphore> imageAvailableSemaphores;
 std::vector<VulkanSemaphore> renderFinishedSemaphores;
@@ -55,29 +59,65 @@ bool framebufferResized = false;
 GLFWwindow* window;
 const int MAX_FRAMES_IN_FLIGHT = 1;
 
+//--------------------------------------------------------------
+// Shader Resources
+//--------------------------------------------------------------
 struct CameraProperties
 {
 	glm::vec3 position = glm::vec3(0, 0, 0);
-	glm::vec3 direction = glm::vec3(0, 0, -1);
-	glm::vec2 size = glm::vec2(800, 600);
 	int width = 1920;
+	glm::vec3 forward = glm::vec3(0, 0, -1);
 	int height = 1080;
+	glm::vec3 right = glm::vec3(1, 0, 0);
+	float nearPlane = 50.0f;
+	glm::vec3 up = glm::vec3(0, 1, 0);
+	float pixelSizeX = 1;
+	float pixelSizeY = 1;
 
 } cameraProperties;
 VulkanBuffer* cameraPropertiesBuffer;
 
 struct CloudProperties
 {
-	glm::vec3 origin;
-	glm::dvec3 size;
-	glm::uvec3 voxelCount;
-	glm::dvec3 voxelSize;
+	glm::vec4 bounds[2]{ glm::uvec4(0) ,glm::uvec4(0) };
+	glm::uvec4 voxelCount = glm::uvec4(0);
+	float maxExtinction = 0.6f;
 
 } cloudProperties;
 VulkanBuffer* cloudPropertiesBuffer;
 
+struct Parameters
+{
+public:
+	unsigned int maxRayBounces = 5;
+	float phaseG = 0.67f; // [-1, 1]
+private:
+	float phaseOnePlusG2 = 1.0f + phaseG * phaseG;
+	float phaseOneMinusG2 = 1.0f - phaseG * phaseG;
+	float phaseOneOver2G = 0.5f / phaseG;
 
+public:
+	void SetPhaseG(float value)
+	{
+		if (value > 1 || value < -1) return;
 
+		phaseG = 0.67f;
+		phaseOnePlusG2 = 1.0f + phaseG * phaseG;
+		phaseOneMinusG2 = 1.0f - phaseG * phaseG;
+		phaseOneOver2G = 0.5f / phaseG;
+	}
+} parameters;
+VulkanBuffer* parametersBuffer;
+
+struct PushConstanst
+{
+	unsigned int time = 0;
+	unsigned int seed = 100;
+} pushConstants;
+
+//----------------------------------------------------------------------
+// Functions
+//----------------------------------------------------------------------
 std::vector<char> ReadFile(const std::string& filename)
 {
 	std::ifstream file(filename, std::ios::ate | std::ios::binary);
@@ -98,6 +138,79 @@ std::vector<char> ReadFile(const std::string& filename)
 	return buffer;
 }
 
+VkCommandBuffer BeginSingleTimeCommands()
+{
+	VkCommandBufferAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandPool = computeCommandPool->GetCommandPool();
+	allocInfo.commandBufferCount = 1;
+
+	VkCommandBuffer commandBuffer;
+	vkAllocateCommandBuffers(device->GetDevice(), &allocInfo, &commandBuffer);
+
+	VkCommandBufferBeginInfo beginInfo = {};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+	return commandBuffer;
+}
+
+void EndSingleTimeCommands(VkCommandBuffer commandBuffer)
+{
+	vkEndCommandBuffer(commandBuffer);
+
+	VkSubmitInfo submitInfo = {};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+
+	vkQueueSubmit(device->GetComputeQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+	vkQueueWaitIdle(device->GetComputeQueue());
+
+	vkFreeCommandBuffers(device->GetDevice(), computeCommandPool->GetCommandPool(), 1, &commandBuffer);
+}
+
+void TransitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
+{
+	VkImageMemoryBarrier imgBarrier = {};
+	imgBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	imgBarrier.oldLayout = oldLayout;
+	imgBarrier.newLayout = newLayout;
+	imgBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	imgBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	imgBarrier.image = image;
+	imgBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	imgBarrier.subresourceRange.baseMipLevel = 0;
+	imgBarrier.subresourceRange.levelCount = 1;
+	imgBarrier.subresourceRange.baseArrayLayer = 0;
+	imgBarrier.subresourceRange.layerCount = 1;
+	imgBarrier.srcAccessMask = 0;
+	imgBarrier.dstAccessMask = 0;
+
+	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &imgBarrier);
+}
+
+void CopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer buffer, VkImage image, VkExtent3D imageExtent)
+{
+	VkBufferImageCopy region = {};
+	region.bufferOffset = 0;
+	region.bufferRowLength = 0;
+	region.bufferImageHeight = 0;
+
+	region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	region.imageSubresource.mipLevel = 0;
+	region.imageSubresource.baseArrayLayer = 0;
+	region.imageSubresource.layerCount = 1;
+
+	region.imageOffset = { 0, 0, 0 };
+	region.imageExtent = imageExtent;
+
+	vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+}
+
 void RecordCommands(uint32_t imageIndex)
 {
 	VkCommandBuffer& commandBuffer = computeCommandPool->GetCommandBuffers()[currentFrame];
@@ -110,41 +223,8 @@ void RecordCommands(uint32_t imageIndex)
 	// Start recording commands
 	vkBeginCommandBuffer(commandBuffer, &initializers::CommandBufferBeginInfo());
 
-	// Change Result Image Layout
-	VkImageMemoryBarrier computeImgBarrier = {};
-	computeImgBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	computeImgBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	computeImgBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-	computeImgBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	computeImgBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	computeImgBarrier.image = computeImage;
-	computeImgBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	computeImgBarrier.subresourceRange.baseMipLevel = 0;
-	computeImgBarrier.subresourceRange.levelCount = 1;
-	computeImgBarrier.subresourceRange.baseArrayLayer = 0;
-	computeImgBarrier.subresourceRange.layerCount = 1;
-	computeImgBarrier.srcAccessMask = 0;
-	computeImgBarrier.dstAccessMask = 0;
-
-	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &computeImgBarrier);
-
-	// Change Swapchain Image Layout
-	VkImageMemoryBarrier swapchainImgBarrier = {};
-	swapchainImgBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	swapchainImgBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	swapchainImgBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-	swapchainImgBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	swapchainImgBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	swapchainImgBarrier.image = swapchainImage;
-	swapchainImgBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	swapchainImgBarrier.subresourceRange.baseMipLevel = 0;
-	swapchainImgBarrier.subresourceRange.levelCount = 1;
-	swapchainImgBarrier.subresourceRange.baseArrayLayer = 0;
-	swapchainImgBarrier.subresourceRange.layerCount = 1;
-	swapchainImgBarrier.srcAccessMask = 0;
-	swapchainImgBarrier.dstAccessMask = 0;
-
-	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &swapchainImgBarrier);
+	// Change Result Image Layout to writeable
+	TransitionImageLayout(commandBuffer, computeImage, computeResult->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
 	// Bind compute pipeline
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline->GetPipeline());
@@ -153,16 +233,17 @@ void RecordCommands(uint32_t imageIndex)
 	std::vector<VkDescriptorSet>& descriptorSets = computeDescriptorPool->GetDescriptorSets();
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout->GetPipelineLayout(), 0, static_cast<uint32_t>(descriptorSets.size()), descriptorSets.data(), 0, nullptr);
 
+	// Push constants
+	vkCmdPushConstants(commandBuffer, computePipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstanst), &pushConstants);
+
 	// Start compute shader
 	vkCmdDispatch(commandBuffer, cameraProperties.width, cameraProperties.height, 1);
 
 	// Change swapchain image layout to dst blit
-	swapchainImgBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &swapchainImgBarrier);
+	TransitionImageLayout(commandBuffer, swapchainImage, computeResult->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
 	// Change result image layout to scr blit
-	computeImgBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &computeImgBarrier);
+	TransitionImageLayout(commandBuffer, computeImage, computeResult->GetFormat(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
 	// Copy result to swapchain image
 	VkImageSubresourceLayers layers{};
@@ -170,7 +251,7 @@ void RecordCommands(uint32_t imageIndex)
 	layers.layerCount = 1;
 	layers.mipLevel = 0;
 
-	VkExtent3D extents = computeResult->GetExtents();
+	VkExtent3D extents = computeResult->GetExtent();
 	VkImageBlit blit{};
 	blit.srcOffsets[0] = { 0,0,0 };
 	blit.srcOffsets[1] = { static_cast<int32_t>(extents.width), static_cast<int32_t>(extents.height), static_cast<int32_t>(extents.depth) };
@@ -182,8 +263,7 @@ void RecordCommands(uint32_t imageIndex)
 	vkCmdBlitImage(commandBuffer, computeImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
 
 	// Change swapchain image layout back to present
-	swapchainImgBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &swapchainImgBarrier);
+	TransitionImageLayout(commandBuffer, swapchainImage, computeResult->GetFormat(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
 	// End recording
 	vkEndCommandBuffer(commandBuffer);
@@ -230,23 +310,27 @@ void CreateSwapchain()
 	swapchainImageViews.reserve(swapchain->GetSwapchainImages().size());
 	for (const VkImage& image : swapchain->GetSwapchainImages())
 	{
-		swapchainImageViews.emplace_back(device, image, swapchain->GetImageFormat());
+		swapchainImageViews.emplace_back(device, image, swapchain->GetImageFormat(), VK_IMAGE_VIEW_TYPE_2D);
 	}
 
 	// Compute result image and view
-	computeResult = new VulkanImage(device, static_cast<uint32_t>(cameraProperties.width), static_cast<uint32_t>(cameraProperties.height), VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
-	computeResultView = new VulkanImageView(device, computeResult->GetImage(), computeResult->GetFormat());
+	computeResult = new VulkanImage(device, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT, static_cast<uint32_t>(cameraProperties.width), static_cast<uint32_t>(cameraProperties.height));
+	computeResultView = new VulkanImageView(device, computeResult);
 
 	// Update compute bindings for output image
 	std::vector<VkWriteDescriptorSet> writes;
+	auto imageInfo = initializers::DescriptorImageInfo(VK_NULL_HANDLE, computeResultView->GetImageView(), VK_IMAGE_LAYOUT_GENERAL);
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		writes.push_back(initializers::WriteDescriptorSet(computeDescriptorSets[i], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &initializers::DescriptorImageInfo(VK_NULL_HANDLE, computeResultView->GetImageView(), VK_IMAGE_LAYOUT_GENERAL)));
+		writes.push_back(initializers::WriteDescriptorSet(computeDescriptorSets[i], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &imageInfo));
 	};
 	vkUpdateDescriptorSets(device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
 	// Compute pipeline;
-	std::vector<VkPushConstantRange> pushConstantRanges{};
+	std::vector<VkPushConstantRange> pushConstantRanges
+	{
+		initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, 8)
+	};
 	std::vector<VkDescriptorSetLayout> setLayouts;
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
@@ -256,10 +340,6 @@ void CreateSwapchain()
 	computePipeline = new VulkanComputePipeline(device, computePipelineLayout, computeShader);
 
 	// Recreate command buffers
-	if (!computeCommandPool)
-	{
-		computeCommandPool = new VulkanCommandPool(device, physicalDevice->GetQueueFamilyIndices().computeFamily);
-	}
 	computeCommandPool->AllocateCommandBuffers(MAX_FRAMES_IN_FLIGHT);
 }
 
@@ -289,8 +369,11 @@ bool IntializeVulkan()
 	// Device
 	device = new VulkanDevice(instance, surface, physicalDevice);
 
+	// Command Pool
+	computeCommandPool = new VulkanCommandPool(device, physicalDevice->GetQueueFamilyIndices().computeFamily);
+
 	// Shader Modules
-	auto computeSPV = ReadFile("../shaders/ComputeTest.spv");
+	auto computeSPV = ReadFile("../shaders/PathTracer.spv");
 	computeShader = new VulkanShaderModule(device, computeSPV);
 
 	// Compute Descriptor Set Layout
@@ -300,17 +383,19 @@ bool IntializeVulkan()
 		// Binding 1: Camera properties (read)
 		initializers::DescriptorSetLayoutBinding(1, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
 		// Binding 2: Cloud grid texel buffer (read)
-		initializers::DescriptorSetLayoutBinding(2, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER),
+		initializers::DescriptorSetLayoutBinding(2, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
 		// Binding 3: Cloud Properties (read)
 		initializers::DescriptorSetLayoutBinding(3, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
+		// Binding 4: Parameters (read)
+		initializers::DescriptorSetLayoutBinding(4, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
 	};
 	computeDescriptorSetLayout = new VulkanDescriptorSetLayout(device, setLayoutBindings);
 
 	// Compute Descriptor Pool
 	std::vector<VkDescriptorPoolSize> poolSizes =
 	{
-		initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2 * MAX_FRAMES_IN_FLIGHT),			// Cloud Properties + Camera Properties
-		initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1 * MAX_FRAMES_IN_FLIGHT),	// Cloud grid sampler
+		initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 * MAX_FRAMES_IN_FLIGHT),			// Cloud Properties + Camera Properties + Parameters
+		initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 * MAX_FRAMES_IN_FLIGHT),	// Cloud grid sampler3D
 		initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 * MAX_FRAMES_IN_FLIGHT),			// Render image
 	};
 	std::vector<VkDescriptorSetLayout> setLayouts;
@@ -321,18 +406,42 @@ bool IntializeVulkan()
 	computeDescriptorPool = new VulkanDescriptorPool(device, poolSizes, static_cast<uint32_t>(setLayoutBindings.size() + MAX_FRAMES_IN_FLIGHT));
 	computeDescriptorPool->AllocateSets(setLayouts, computeDescriptorSets);
 
-	// Buffers
+	// Buffers & Images
 	cameraPropertiesBuffer = new VulkanBuffer(device, &cameraProperties, sizeof(CameraProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 	cloudPropertiesBuffer = new VulkanBuffer(device, &cloudProperties, sizeof(CloudProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-	cloudBuffer = new VulkanBuffer(device, cloudData->GetData(), static_cast<uint32_t>(cloudData->GetByteSize()), VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT);
-	cloudBufferView = new VulkanBufferView(device, cloudBuffer, VK_FORMAT_R32_SFLOAT);
+	parametersBuffer = new VulkanBuffer(device, &parameters, sizeof(Parameters), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+	cloudImage = new VulkanImage(
+		device,
+		VK_FORMAT_R16_SFLOAT,
+		VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		static_cast<uint32_t>(cloudProperties.voxelCount.x),
+		static_cast<uint32_t>(cloudProperties.voxelCount.y),
+		static_cast<uint32_t>(cloudProperties.voxelCount.z));
+	cloudImageView = new VulkanImageView(device, cloudImage);
+	cloudSampler = new VulkanSampler(device);
+
+	// Transfer cloud data to device image and make it readable by the shader
+	cloudPropertiesBuffer->SetData();
+
+	VulkanBuffer stagingBuffer(device, cloudData->GetData(), cloudData->GetElementSize(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, cloudData->GetSize());
+	stagingBuffer.SetData();
+
+	VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+	TransitionImageLayout(commandBuffer, cloudImage->GetImage(), cloudImage->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	CopyBufferToImage(commandBuffer, stagingBuffer.GetBuffer(), cloudImage->GetImage(), cloudImage->GetExtent());
+	TransitionImageLayout(commandBuffer, cloudImage->GetImage(), cloudImage->GetFormat(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	EndSingleTimeCommands(commandBuffer);
+
+	vkDeviceWaitIdle(device->GetDevice());
 
 	// Update static descriptor sets
 	std::vector<VkWriteDescriptorSet> writes;
+	auto imageInfo = initializers::DescriptorImageInfo(cloudSampler->GetSampler(), cloudImageView->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	auto bufferInfo = initializers::DescriptorBufferInfo(cloudPropertiesBuffer->GetBuffer(), 0, cloudPropertiesBuffer->GetSize());
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		writes.push_back(initializers::WriteDescriptorSet(computeDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 2, &initializers::DescriptorBufferInfo(cloudBuffer->GetBuffer(), 0, cloudBuffer->GetSize()), &(cloudBufferView->GetBufferView()), 1));
-		writes.push_back(initializers::WriteDescriptorSet(computeDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &initializers::DescriptorBufferInfo(cloudPropertiesBuffer->GetBuffer(), 0, cloudPropertiesBuffer->GetSize()), 1));
+		writes.push_back(initializers::WriteDescriptorSet(computeDescriptorSets[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &imageInfo));
+		writes.push_back(initializers::WriteDescriptorSet(computeDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &bufferInfo));
 	};
 	vkUpdateDescriptorSets(device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
@@ -358,18 +467,21 @@ bool IntializeVulkan()
 
 void Clear()
 {
-	std::cout << "Clearing allocations...";
-
 	ClearSwapchain();
 
+	std::cout << "Clearing allocations...";
 	inFlightFences.clear();
 	renderFinishedSemaphores.clear();
 	imageAvailableSemaphores.clear();
 
+
 	// GPU Memory Allocations
-	delete cloudBuffer;
+	delete cloudImageView;
+	delete cloudSampler;
+	delete cloudImage;
 	delete cameraPropertiesBuffer;
 	delete cloudPropertiesBuffer;
+	delete parametersBuffer;
 
 	// Compute resources
 	delete computeShader;
@@ -407,10 +519,17 @@ void DrawFrame()
 	// Mark the image as now being in use by this frame
 	imagesInFlight[imageIndex] = inFlightFences[currentFrame].GetFence();
 
-	// Update camera properties in GPU
+	// Update camera buffer and parameters buffer
+	cameraPropertiesBuffer->SetData();
+	parametersBuffer->SetData();
+
+	// Update camera properties and parameters in GPU
 	computeDescriptorPool->GetDescriptorSets();
+	auto parameterInfo = initializers::DescriptorBufferInfo(cameraPropertiesBuffer->GetBuffer(), 0, cameraPropertiesBuffer->GetSize());
+	auto cameraPropertiesInfo = initializers::DescriptorBufferInfo(parametersBuffer->GetBuffer(), 0, parametersBuffer->GetSize());
 	std::vector<VkWriteDescriptorSet> writes{
-		initializers::WriteDescriptorSet(computeDescriptorSets[currentFrame], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &initializers::DescriptorBufferInfo(cameraPropertiesBuffer->GetBuffer(), 0, cameraPropertiesBuffer->GetSize()))
+		initializers::WriteDescriptorSet(computeDescriptorSets[currentFrame], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &parameterInfo),
+		initializers::WriteDescriptorSet(computeDescriptorSets[currentFrame], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &cameraPropertiesInfo)
 	};
 	vkUpdateDescriptorSets(device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
@@ -493,16 +612,17 @@ int main()
 {
 	// Load cloud from a file
 	std::cout << "Loading cloud file...";
-	cloudData = Grid3D<float>::Load("../models/cloud-1940.xyz");
-	cloudProperties.origin = glm::vec3(0, 0, 0);
-	cloudProperties.voxelSize = cloudData->GetVoxelSize();
-	cloudProperties.voxelCount = cloudData->GetVoxelCount();
-	cloudProperties.size = glm::dvec3(
-		cloudProperties.voxelSize.x * cloudProperties.voxelCount.x,
-		cloudProperties.voxelSize.y * cloudProperties.voxelCount.y,
-		cloudProperties.voxelSize.z * cloudProperties.voxelCount.z
+	cloudData = Grid3D<float>::Load("../models/cloud-1090.xyz");
+	cloudProperties.voxelCount = glm::uvec4(cloudData->GetVoxelCount(),0);
+	cloudProperties.bounds[0] = glm::vec4(0, 0, 0, 0);
+	cloudProperties.bounds[1] = glm::vec4(
+		cloudData->GetVoxelSize().x * 100 * cloudProperties.voxelCount.x,
+		cloudData->GetVoxelSize().y * 100 * cloudProperties.voxelCount.y,
+		cloudData->GetVoxelSize().z * 100 * cloudProperties.voxelCount.z,
+		0
 	);
 	std::cout << "OK" << std::endl;
+	
 
 	// Initialize GLFW
 	if (!InitializeWindow())

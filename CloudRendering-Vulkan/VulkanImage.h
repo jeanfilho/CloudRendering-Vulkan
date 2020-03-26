@@ -5,12 +5,12 @@ class VulkanDevice;
 class VulkanImage
 {
 public:
-	VulkanImage(VulkanDevice* device, uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage);
+	VulkanImage(VulkanDevice* device, VkFormat format, VkImageUsageFlags usage, uint32_t width, uint32_t height = 1, uint32_t depth = 1);
 	~VulkanImage();
 
 	VkImage GetImage();
 	VkFormat GetFormat();
-	VkExtent3D GetExtents();
+	VkExtent3D GetExtent();
 
 private:
 	VulkanDevice* m_device = nullptr;

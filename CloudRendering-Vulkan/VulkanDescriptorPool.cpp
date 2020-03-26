@@ -15,6 +15,7 @@ VulkanDescriptorPool::~VulkanDescriptorPool()
 {
 	if (m_pool != VK_NULL_HANDLE)
 	{
+		Clear();
 		vkDestroyDescriptorPool(m_device->GetDevice(), m_pool, nullptr);
 	}
 }

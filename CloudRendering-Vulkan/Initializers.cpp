@@ -164,12 +164,12 @@ VkSwapchainCreateInfoKHR initializers::SwapchainCreateInfo(VkSurfaceKHR surface,
 	return info;
 }
 
-VkImageViewCreateInfo initializers::ImageViewCreateInfo(VkImage image, VkFormat format)
+VkImageViewCreateInfo initializers::ImageViewCreateInfo(VkImage image, VkImageViewType viewType, VkFormat format)
 {
 	VkImageViewCreateInfo info{};
 	info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	info.image = image;
-	info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	info.viewType = viewType;
 	info.format = format;
 
 	info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -262,6 +262,7 @@ VkDescriptorPoolCreateInfo initializers::DescriptorPoolCreateInfo(std::vector<Vk
 	info.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	info.pPoolSizes = poolSizes.data();
 	info.maxSets = maxSets;
+	info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 
 	return info;
 }
@@ -280,6 +281,7 @@ VkCommandBufferBeginInfo initializers::CommandBufferBeginInfo()
 {
 	VkCommandBufferBeginInfo info{};
 	info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	return info;
 }
 
@@ -380,4 +382,21 @@ VkImageCreateInfo initializers::ImageCreateInfo(VkImageType imageType, VkFormat 
 	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 	return info;
+}
+
+VkSamplerCreateInfo initializers::SamplerCreateInfo()
+{
+	VkSamplerCreateInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	info.maxAnisotropy = 1.0f;
+	return info;
+}
+
+VkPushConstantRange initializers::PushConstantRange(VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size)
+{
+	VkPushConstantRange range{};
+	range.stageFlags = stageFlags;
+	range.offset = offset;
+	range.size = size;
+	return range;
 }

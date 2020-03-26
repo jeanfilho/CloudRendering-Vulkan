@@ -60,6 +60,10 @@ inline Grid3D<T>* Grid3D<T>::Load(const std::string& filename)
 	Grid3D<T>* grid = new Grid3D<T>(sizeX, sizeY, sizeZ, voxelSizeX, voxelSizeY, voxelSizeZ);
 
 	in.read(reinterpret_cast<char*>(grid->m_data.data()), sizeof(T)* sizeX* sizeY* sizeZ);
+	if (!in.eof())
+	{
+		std::cout << "read crap";
+	}
 	in.close();
 
 	return grid;

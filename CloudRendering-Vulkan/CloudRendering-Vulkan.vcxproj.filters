@@ -93,6 +93,9 @@
     <ClCompile Include="VulkanImage.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="VulkanSampler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Initializers.h">
@@ -176,9 +179,15 @@
     <ClInclude Include="VulkanImage.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="VulkanSampler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\shaders\ComputeTest.comp">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\shaders\PathTracer.comp">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>

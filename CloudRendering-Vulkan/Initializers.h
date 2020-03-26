@@ -30,7 +30,13 @@ namespace initializers
 
 	VkSwapchainCreateInfoKHR SwapchainCreateInfo(VkSurfaceKHR surface, QueueFamilyIndices& indices, SwapchainSupportDetails swapchainSupport, uint32_t imageCount, VkSurfaceFormatKHR surfaceFormat, VkPresentModeKHR presentMode, VkExtent2D extent);
 
-	VkImageViewCreateInfo ImageViewCreateInfo(VkImage image, VkFormat format);
+	VkImageViewCreateInfo ImageViewCreateInfo(VkImage image, VkImageViewType viewType, VkFormat format);
+
+	VkImageCreateInfo ImageCreateInfo(VkImageType imageType, VkFormat format, VkExtent3D extent, uint32_t mipLevels, uint32_t arrayLayers, VkSampleCountFlagBits samples, VkImageUsageFlags usage, VkImageCreateFlags flags = 0);
+
+	VkSamplerCreateInfo SamplerCreateInfo();
+
+	VkPushConstantRange PushConstantRange(VkShaderStageFlags stageFlags, uint32_t size,	uint32_t offset);
 
 	VkShaderModuleCreateInfo ShaderModuleCreateInfo(std::vector<char>& code);
 
@@ -65,6 +71,4 @@ namespace initializers
 	VkDescriptorImageInfo DescriptorImageInfo(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout);
 
 	VkBufferViewCreateInfo BufferViewCreateInfo(VkBuffer buffer, VkFormat format, VkDeviceSize offset, VkDeviceSize range, VkBufferViewCreateFlags flags);
-
-	VkImageCreateInfo ImageCreateInfo(VkImageType imageType, VkFormat format, VkExtent3D extent, uint32_t mipLevels, uint32_t arrayLayers, VkSampleCountFlagBits samples, VkImageUsageFlags usage, VkImageCreateFlags flags = 0);
 }
