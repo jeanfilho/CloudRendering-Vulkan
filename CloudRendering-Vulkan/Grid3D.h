@@ -60,10 +60,6 @@ inline Grid3D<T>* Grid3D<T>::Load(const std::string& filename)
 	Grid3D<T>* grid = new Grid3D<T>(sizeX, sizeY, sizeZ, voxelSizeX, voxelSizeY, voxelSizeZ);
 
 	in.read(reinterpret_cast<char*>(grid->m_data.data()), sizeof(T)* sizeX* sizeY* sizeZ);
-	if (!in.eof())
-	{
-		std::cout << "read crap";
-	}
 	in.close();
 
 	return grid;
@@ -139,7 +135,7 @@ inline size_t Grid3D<T>::GetElementSize()
 template<typename T>
 inline void Grid3D<T>::Copy(void* src, size_t size)
 {
-	m_data.resize(size / sizeof(T));
+	m_data.resize(size);
 	memcpy(m_data.data(), src, size);
 }
 

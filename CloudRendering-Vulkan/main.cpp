@@ -64,9 +64,9 @@ const int MAX_FRAMES_IN_FLIGHT = 1;
 //--------------------------------------------------------------
 struct CameraProperties
 {
-	glm::vec3 position = glm::vec3(0, 0, 0);
+	glm::vec3 position = glm::vec3(0, 0, -100);
 	int width = 1920;
-	glm::vec3 forward = glm::vec3(0, 0, -1);
+	glm::vec3 forward = glm::vec3(0, 0, 1);
 	int height = 1080;
 	glm::vec3 right = glm::vec3(1, 0, 0);
 	float nearPlane = 50.0f;
@@ -349,7 +349,7 @@ bool IntializeVulkan()
 
 	VulkanConfiguration config{};
 	config.applicationName = "Cloud Renderer";
-	config.applicationVersion = VK_MAKE_VERSION(0, 0, 0);
+	config.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
 
 	// Instance
 	instance = new VulkanInstance(config);
@@ -373,7 +373,7 @@ bool IntializeVulkan()
 	computeCommandPool = new VulkanCommandPool(device, physicalDevice->GetQueueFamilyIndices().computeFamily);
 
 	// Shader Modules
-	auto computeSPV = ReadFile("../shaders/PathTracer.spv");
+	auto computeSPV = ReadFile("../shaders/PathTracer.comp.spv");
 	computeShader = new VulkanShaderModule(device, computeSPV);
 
 	// Compute Descriptor Set Layout
@@ -612,13 +612,21 @@ int main()
 {
 	// Load cloud from a file
 	std::cout << "Loading cloud file...";
-	cloudData = Grid3D<float>::Load("../models/cloud-1090.xyz");
+
+	//cloudData = Grid3D<float>::Load("../models/cloud-1090.xyz");
+	cloudData = new Grid3D<float>(2, 2, 2, 20, 20, 20);
+
+	std::vector<float> testData =
+	{ 1, 0, 0, 0,
+		0, 0, 0, 0 };
+	cloudData->Copy(testData.data(), testData.size() * sizeof(float));
+
 	cloudProperties.voxelCount = glm::uvec4(cloudData->GetVoxelCount(),0);
 	cloudProperties.bounds[0] = glm::vec4(0, 0, 0, 0);
 	cloudProperties.bounds[1] = glm::vec4(
-		cloudData->GetVoxelSize().x * 100 * cloudProperties.voxelCount.x,
-		cloudData->GetVoxelSize().y * 100 * cloudProperties.voxelCount.y,
-		cloudData->GetVoxelSize().z * 100 * cloudProperties.voxelCount.z,
+		cloudData->GetVoxelSize().x * cloudProperties.voxelCount.x,
+		cloudData->GetVoxelSize().y * cloudProperties.voxelCount.y,
+		cloudData->GetVoxelSize().z * cloudProperties.voxelCount.z,
 		0
 	);
 	std::cout << "OK" << std::endl;

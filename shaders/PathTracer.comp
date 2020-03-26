@@ -94,7 +94,9 @@ int getGridOffsetIndex(vec3 pos)
 
 vec3 getCameraDirection(in ivec2 coord)
 {
-    vec3 rayDir = cameraProperties.forward * cameraProperties.nearPlane - cameraProperties.right  * cameraProperties.pixelSizeX * coord.x - cameraProperties.up * cameraProperties.pixelSizeY * coord.y;
+    vec3 rayDir = cameraProperties.forward * cameraProperties.nearPlane
+                    + cameraProperties.right  * cameraProperties.pixelSizeX * (coord.x - cameraProperties.width/2)
+                    - cameraProperties.up * cameraProperties.pixelSizeY * (coord.y - cameraProperties.height/2);
     return normalize(rayDir);
 }
 
@@ -357,46 +359,50 @@ void main()
     ray.dir = getCameraDirection(pixelCoord);
     if(!intersectCloud(ray, ray.pos))
     {
-        result = SKY_COLOR;
+        result = SKY_COLOR;        
     }
     else
     {
-        uint i = 0;
-        vec4 radiance;
-        vec4 currentRadiance;
-        vec4 transmittance;
-        vec4 weight;
-        Ray currentRay;
+//         uint i = 0;
+//         vec4 radiance;
+//         vec4 currentRadiance;
+//         vec4 transmittance;
+//         vec4 weight;
+//         Ray currentRay;
 
-#ifdef USE_MARSAGLIA
-        initializeRandom(uint(pushConstants.randomSeed));
-#endif
+// #ifdef USE_MARSAGLIA
+//         initializeRandom(uint(pushConstants.randomSeed));
+// #endif
 
-        // Path tracer loop
-        while(i < parameters.maxRayBounces)
-        {
-            currentRay = ray;
+//         // Path tracer loop
+//         while(i < parameters.maxRayBounces)
+//         {
+//             currentRay = ray;
 
-            // Scatter point
-            generateSample(currentRay.dir, ray.dir, radiance);
+//             // Scatter point
+//             generateSample(currentRay.dir, ray.dir, radiance);
 
-            // Move along scatter direction and accumulate radiance
-            if(!integrateCloud(ray, radiance, transmittance, weight))
-            {
-                break;
-            }
+//             // Move along scatter direction and accumulate radiance
+//             if(!integrateCloud(ray, radiance, transmittance, weight))
+//             {
+//                 break;
+//             }
 
-            // Sample radiance from new direction
-            evaluateSample(currentRay.dir, ray.dir, radiance);
+//             // Sample radiance from new direction
+//             evaluateSample(currentRay.dir, ray.dir, radiance);
 
-            currentRadiance += weight * throughput * radiance;
-            throughput *= transmittance;
+//             currentRadiance += weight * throughput * radiance;
+//             throughput *= transmittance;
             
-            i++;
-        }
+//             i++;
+//         }
     }
+
+    result = vec4(ray.dir.x, ray.dir.y, 0,1);
     
+    imageStore(resultImage, pixelCoord, result);
+
     vec4 resultOld = imageLoad(resultImage, pixelCoord);
     //result = vec4(resultOld.a * resultOld.rgb + (1 - resultOld.a) * result.rgb, resultOld.a + (1 - resultOld.a) * result.a);
-	imageStore(resultImage, pixelCoord, resultOld + result);
+	//imageStore(resultImage, pixelCoord, resultOld + result);
 }
