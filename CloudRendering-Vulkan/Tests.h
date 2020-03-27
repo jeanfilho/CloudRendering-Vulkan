@@ -5,6 +5,8 @@ namespace tests
 {
 	void RunTests();
 
+	void createOrthonormalBasis(const glm::vec3& dir, glm::vec3& t0, glm::vec3& t1);
+
 	struct Ray
 	{
 		glm::vec3 pos;

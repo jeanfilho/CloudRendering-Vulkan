@@ -6,7 +6,21 @@
 
 void tests::RunTests()
 {
+	glm::vec3 dir(0, 1, 0);
+	glm::vec3 t0, t1;
+	createOrthonormalBasis(dir, t0, t1);
 
+	bool test = true;
+}
+
+void tests::createOrthonormalBasis(const glm::vec3& dir, glm::vec3& t0, glm::vec3& t1)
+{
+	float a = dir.y / (1.0f + dir.z);
+	float b = dir.y * a;
+	float c = -dir.x * a;
+
+	t0 = glm::vec3(dir.z + b, c, -dir.x);
+	t1 = glm::vec3(c, 1.0f - b, -dir.y);
 }
 
 int tests::isNegativeSign(float value)

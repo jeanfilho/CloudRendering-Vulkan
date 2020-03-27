@@ -20,28 +20,33 @@ struct CloudProperties
 {
 	glm::vec4 bounds[2]{ glm::uvec4(0) ,glm::uvec4(0) };
 	glm::uvec4 voxelCount = glm::uvec4(0);
-	float maxExtinction = 0.6f;
-
+	float maxExtinction = 0.2f;
 };
 
 struct Parameters
 {
 public:
 	unsigned int maxRayBounces = 5;
-	float phaseG = 0.67f; // [-1, 1]
 private:
+	float phaseG = 0.67f; // [-1, 1]
 	float phaseOnePlusG2 = 1.0f + phaseG * phaseG;
 	float phaseOneMinusG2 = 1.0f - phaseG * phaseG;
 	float phaseOneOver2G = 0.5f / phaseG;
+	bool isotropic = false;
 
 public:
 	void SetPhaseG(float value)
 	{
 		if (value > 1 || value < -1) return;
 
-		phaseG = 0.67f;
-		phaseOnePlusG2 = 1.0f + phaseG * phaseG;
-		phaseOneMinusG2 = 1.0f - phaseG * phaseG;
-		phaseOneOver2G = 0.5f / phaseG;
+		phaseG = value;
+
+		isotropic = (std::abs(phaseG) < 0.0001f);
+		if (!isotropic)
+		{
+			phaseOnePlusG2 = 1.0f + phaseG * phaseG;
+			phaseOneMinusG2 = 1.0f - phaseG * phaseG;
+			phaseOneOver2G = 0.5f / phaseG;
+		}
 	}
 };

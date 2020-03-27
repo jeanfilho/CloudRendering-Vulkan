@@ -36,7 +36,7 @@ namespace initializers
 
 	VkSamplerCreateInfo SamplerCreateInfo();
 
-	VkPushConstantRange PushConstantRange(VkShaderStageFlags stageFlags, uint32_t size,	uint32_t offset);
+	VkPushConstantRange PushConstantRange(VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size);
 
 	VkShaderModuleCreateInfo ShaderModuleCreateInfo(std::vector<char>& code);
 

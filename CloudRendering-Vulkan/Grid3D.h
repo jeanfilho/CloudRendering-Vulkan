@@ -26,6 +26,8 @@ public:
 
 	void Save(const std::string& filename);
 
+	T GetMajorant();
+
 private:
 	std::vector<T> m_data;
 
@@ -49,7 +51,9 @@ inline Grid3D<T>* Grid3D<T>::Load(const std::string& filename)
 	double voxelSizeY = 0;
 	double voxelSizeZ = 0;
 
-	std::ifstream in(filename, std::ofstream::in | std::ofstream::binary);
+	std::ifstream in(filename, std::ifstream::in | std::ifstream::binary);
+
+
 	in.read(reinterpret_cast<char*>(&sizeX), sizeof(unsigned int));
 	in.read(reinterpret_cast<char*>(&sizeY), sizeof(unsigned int));
 	in.read(reinterpret_cast<char*>(&sizeZ), sizeof(unsigned int));
@@ -59,10 +63,21 @@ inline Grid3D<T>* Grid3D<T>::Load(const std::string& filename)
 
 	Grid3D<T>* grid = new Grid3D<T>(sizeX, sizeY, sizeZ, voxelSizeX, voxelSizeY, voxelSizeZ);
 
-	in.read(reinterpret_cast<char*>(grid->m_data.data()), sizeof(T) * sizeX * sizeY * sizeZ);
-	if (!in.eof())
+	//size_t size = sizeof(T) * sizeX * sizeY * sizeZ;
+	//in.read(reinterpret_cast<char*>(grid->m_data.data()), size);
+
+	for (unsigned int x = 0; x < sizeX; x++)
 	{
-		std::cout << "There was still data left in the .xyz file";
+		for (unsigned int y = 0; y < sizeY; y++)
+		{
+			for (unsigned int z = 0; z < sizeZ; z++)
+			{
+				float value;
+				in.read(reinterpret_cast<char*>(&value), sizeof(float));
+				unsigned int idx = x + sizeX * y + sizeX * sizeY * z;
+				grid->m_data[idx] = value;
+			}
+		}
 	}
 
 	in.close();
@@ -156,4 +171,18 @@ inline void Grid3D<T>::Save(const std::string& filename)
 	out.write(reinterpret_cast<char*>(&m_voxelSizeZ), sizeof(double));
 	out.write(reinterpret_cast<char*>(m_data.data()), sizeof(T) * m_countX * m_countY * m_countZ);
 	out.close();
+}
+
+template<typename T>
+inline T Grid3D<T>::GetMajorant()
+{
+	T majorant = T();
+	for (const T& value : m_data)
+	{
+		if (majorant < value)
+		{
+			majorant = value;
+		}
+	}
+	return majorant;
 }

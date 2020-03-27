@@ -45,7 +45,7 @@ VulkanShaderModule* computeShader;
 VulkanImage* computeResult;
 VulkanImageView* computeResultView;
 
-Grid3D<double>* cloudData;
+Grid3D<float>* cloudData;
 VulkanImage* cloudImage;
 VulkanImageView* cloudImageView;
 VulkanSampler* cloudSampler;
@@ -61,6 +61,9 @@ bool framebufferResized = false;
 GLFWwindow* window;
 const int MAX_FRAMES_IN_FLIGHT = 1;
 
+double previousTime = 0;
+unsigned int frameCount = 0;
+
 //--------------------------------------------------------------
 // Shader Resources
 //--------------------------------------------------------------
@@ -73,15 +76,27 @@ VulkanBuffer* cloudPropertiesBuffer;
 Parameters parameters;
 VulkanBuffer* parametersBuffer;
 
-struct PushConstanst
+struct PushConstants
 {
-	unsigned int time = 0;
-	unsigned int seed = 100;
+	double  time = 0;
+	int seed = 100;
 } pushConstants;
 
 //----------------------------------------------------------------------
 // Functions
 //----------------------------------------------------------------------
+void UpdateTime()
+{
+	pushConstants.time = glfwGetTime();
+	frameCount++;
+	if (pushConstants.time - previousTime >= 1.0)
+	{ 
+		printf("%f ms/frame\n", 1000.0 / double(frameCount));
+		frameCount = 0;
+		previousTime += 1.0;
+	}
+}
+
 std::vector<char> ReadFile(const std::string& filename)
 {
 	std::ifstream file(filename, std::ios::ate | std::ios::binary);
@@ -198,7 +213,7 @@ void RecordCommands(uint32_t imageIndex)
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout->GetPipelineLayout(), 0, static_cast<uint32_t>(descriptorSets.size()), descriptorSets.data(), 0, nullptr);
 
 	// Push constants
-	vkCmdPushConstants(commandBuffer, computePipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstanst), &pushConstants);
+	vkCmdPushConstants(commandBuffer, computePipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &pushConstants);
 
 	// Start compute shader
 	vkCmdDispatch(commandBuffer, cameraProperties.width, cameraProperties.height, 1);
@@ -293,7 +308,7 @@ void CreateSwapchain()
 	// Compute pipeline;
 	std::vector<VkPushConstantRange> pushConstantRanges
 	{
-		initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, 8)
+		initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants))
 	};
 	std::vector<VkDescriptorSetLayout> setLayouts;
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
@@ -542,6 +557,10 @@ void MainLoop()
 	while (!glfwWindowShouldClose(window))
 	{
 		glfwPollEvents();
+
+		UpdateTime();
+		pushConstants.seed = std::rand();
+
 		DrawFrame();
 	}
 	std::cout << "Main Loop stopped" << std::endl;
@@ -573,10 +592,16 @@ bool InitializeWindow()
 
 int main()
 {
+#ifdef _DEBUG
+	tests::RunTests();
+#endif
+
+	std::srand(static_cast<unsigned int>(std::time(nullptr)));
+
 	// Load cloud from a file
 	std::cout << "Loading cloud file...";
 
-	cloudData = Grid3D<double>::Load("../models/cloud-1090.xyz");
+	cloudData = Grid3D<float>::Load("../models/cloud-1090.xyz");
 	//cloudData = new Grid3D<float>(2, 2, 2, 200, 200, 200);
 	//std::vector<float> testData =
 	//{ 1, 0, 0, 0,
@@ -588,6 +613,7 @@ int main()
 		cloudData->GetVoxelSize().y * 500,
 		cloudData->GetVoxelSize().z * 500 };
 
+	cloudProperties.maxExtinction = cloudData->GetMajorant();
 	cloudProperties.voxelCount = glm::uvec4(cloudData->GetVoxelCount(), 0);
 	cloudProperties.bounds[0] = glm::vec4(
 		-cloudSize.x/2 * cloudProperties.voxelCount.x,
@@ -598,9 +624,8 @@ int main()
 	cloudProperties.bounds[1] = -cloudProperties.bounds[0];
 	std::cout << "OK" << std::endl;
 
-#ifdef _DEBUG
-	tests::RunTests();
-#endif
+	parameters.maxRayBounces = 1;
+	parameters.SetPhaseG(0);
 	
 
 	// Initialize GLFW

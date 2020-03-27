@@ -57,13 +57,14 @@ layout (binding = 4) uniform Parameters
     float phaseOnePlusG2;
     float phaseOneMinusG2;
     float phaseOneOver2G;
+    bool isotropic;
 
 } parameters;
 
 layout (push_constant) uniform PushConstants
 {
-    uint time;
-    uint randomSeed;
+    double time;
+    int seed;
 } pushConstants;
 
 //---------------------------------------------------------
@@ -89,7 +90,7 @@ int getGridOffsetIndex(vec3 pos)
     uint x = uint(pos.x);
     uint y = uint(pos.y);
     uint z = uint(pos.z);
-    return int(x + y * cloudProperties.voxelCount.x + z * cloudProperties.voxelCount.x * cloudProperties.voxelCount.y);
+    return int(z + y * cloudProperties.voxelCount.z + x * cloudProperties.voxelCount.y * cloudProperties.voxelCount.z);
 }
 
 void getCameraRay(in ivec2 coord, out Ray ray)
@@ -171,6 +172,8 @@ vec4 getCloudColorProperty(in vec3 pos)
     return vec4(1.0f);
 }
 
+
+
 // HenyeyGreenstein from PBRT book
 float phaseHG(float cosTheta, float g)
 {
@@ -193,8 +196,15 @@ void createOrthonormalBasis(in const vec3 dir, out vec3 t0, out vec3 t1)
 // PNRG and Noise functions
 //---------------------------------------------------------
 
+uint rng_state;
+void initializeRandom(uint seed) {
+	rng_state = seed;
+	/*[loop]
+	for (int i = 0; i < seed % 7 + 2; i++)
+		random();*/
+}
+
 #ifdef USE_MARSAGLIA
-shared uint rng_state;
 uint rand_xorshift()
 {
 	// Xorshift algorithm from George Marsaglia's paper
@@ -209,13 +219,6 @@ float generateRandomNumber()
 	return rand_xorshift() * (1.0 / 4294967296.0);
 }
 
-void initializeRandom(uint seed) {
-	rng_state = seed;
-	/*[loop]
-	for (int i = 0; i < seed % 7 + 2; i++)
-		random();*/
-}
-
 #else
 // Gold Noise ©2015 dcerisano@standard3d.com
 // - based on the Golden Ratio
@@ -226,23 +229,22 @@ float gold_noise(in vec2 xy, in float seed){
        return fract(tan(distance(xy*PHI, xy)*seed)*xy.x);
 }
 
-float shift;
 float generateRandomNumber()
 {
-    shift += PHI;
-    return gold_noise(gl_GlobalInvocationID.xy, pushConstants.randomSeed + shift);
+    rng_state += uint(PHI);
+    return gold_noise(gl_GlobalInvocationID.xy, rng_state);
 }
 
 #endif
 
 //---------------------------------------------------------
-// Phase BSDF
+// Phase BSDF - Henyey-Greenstein
 //---------------------------------------------------------
 float calculatePDF(float costheta)
 {
     return 0.25f * parameters.phaseOneMinusG2 / (PI * pow(parameters.phaseOnePlusG2 - 2.0f * parameters.phaseG * costheta, 1.5f));
 }
-// Assumes non-isotropic due to division by m_g
+// Assumes non-isotropic due to division by phaseG
 float invertCDF(float xi)
 {
     float t = (parameters.phaseOneMinusG2) / (1.0f - parameters.phaseG + 2.0f * parameters.phaseG * xi);
@@ -252,9 +254,17 @@ float invertCDF(float xi)
 // Evaluate radiance
 float evaluateSample(in const vec3 incomingDirection, in const vec3 sampleDirection, out vec4 radiance)
 {
-    
-    float cosTheta = dot(-incomingDirection, sampleDirection);
-    float pdf = calculatePDF(cosTheta);
+    float pdf;
+
+    if(parameters.isotropic)
+    {
+        pdf = 0.25f * PI;
+    }
+    else
+    {
+        float cosTheta = dot(-incomingDirection, sampleDirection);
+        pdf = calculatePDF(cosTheta);
+    }
     
     radiance = vec4(pdf);
     return pdf;
@@ -263,17 +273,43 @@ float evaluateSample(in const vec3 incomingDirection, in const vec3 sampleDirect
 // Scatter ray and evaluate radiance
 float generateSample(in const vec3 incomingDirection, out vec3 sampleDirection, out vec4 radiance)
 {
-    float phi = generateRandomNumber() * 2 * PI;
-    float cosTheta = invertCDF(generateRandomNumber());
-    float sinTheta = sqrt(1.0f - cosTheta * cosTheta); // actually square of sinTheta
-    vec3 direction = -incomingDirection;
-    vec3 t0, t1;
+    float pdf;
 
-    createOrthonormalBasis(direction, t0, t1);
-    sampleDirection = sinTheta * sin(phi) * t0 + sinTheta * cos(phi) * t1 +
+    if(parameters.isotropic)
+    {
+        float xi = generateRandomNumber();
+        sampleDirection.z = xi * 2.0 - 1.0; // cosTheta
+        float sinTheta = 1.0 - sampleDirection.z * sampleDirection.z; // actually square of sinTheta
+        if (sinTheta > 0.0)
+        {
+            sinTheta = sqrt(sinTheta);
+            xi = generateRandomNumber();
+            float phi = xi * 2.0 * PI;
+            sampleDirection.x = sinTheta * cos(phi);
+            sampleDirection.y = sinTheta * sin(phi);
+        }
+        else
+        {
+            sampleDirection.x = sampleDirection.y = 0.0;
+        }
+
+        pdf = 0.25 / PI;
+    }
+    else
+    {
+        float phi = generateRandomNumber() * 2 * PI;
+        float cosTheta = invertCDF(generateRandomNumber());
+        float sinTheta = sqrt(1.0f - cosTheta * cosTheta); // actually square of sinTheta
+        vec3 direction = -incomingDirection;
+        vec3 t0, t1;
+
+        createOrthonormalBasis(direction, t0, t1);
+        sampleDirection = sinTheta * sin(phi) * t0 + sinTheta * cos(phi) * t1 +
                       cosTheta * direction;
 
-    float pdf = calculatePDF(cosTheta);
+        pdf = calculatePDF(cosTheta);
+    }
+
     radiance = vec4(pdf);
     return pdf;
 }
@@ -349,6 +385,8 @@ bool integrateCloud(
 //---------------------------------------------------------
 void main() 
 {
+    initializeRandom(uint(pushConstants.seed + gl_GlobalInvocationID.x  + gl_GlobalInvocationID.y * cameraProperties.height));
+
     ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
     
     vec4 result = vec4(0.0f);
@@ -365,44 +403,37 @@ void main()
     {
         uint i = 0;
         vec4 radiance;
-        vec4 currentRadiance;
+        vec4 currentRadiance = vec4(0,0,0,1);
         vec4 transmittance;
         vec4 weight;
         Ray currentRay;
 
-#ifdef USE_MARSAGLIA
-        initializeRandom(uint(pushConstants.randomSeed + gl_GlobalInvocationID.x  + gl_GlobalInvocationID.y * cameraProperties.height));
-#endif
-
         // Path tracer loop
         while(i < parameters.maxRayBounces)
         {
+            // Move along scatter direction and accumulate radiance
+            if(!integrateCloud(ray, radiance, transmittance, weight))
+            {  
+                break;
+            }
             currentRay = ray;
 
             // Scatter point
             generateSample(currentRay.dir, ray.dir, radiance);
 
-            // Move along scatter direction and accumulate radiance
-            //result = vec4(float(i) / (parameters.maxRayBounces + 1),0,0,0);
-            result = vec4(ray.dir,1);
-            if(!integrateCloud(ray, radiance, transmittance, weight))
-            {  
-                break;
-            }
-
             // Sample radiance from new direction
-            evaluateSample(currentRay.dir, ray.dir, radiance);
+            //evaluateSample(currentRay.dir, ray.dir, radiance);
 
             currentRadiance += weight * throughput * radiance;
             throughput *= transmittance;
             
             i++;
         }
+        result = radiance;
+
+        vec4 resultOld = imageLoad(resultImage, pixelCoord);
+        result += resultOld;
     }
     
-    imageStore(resultImage, pixelCoord, result);
-
-    vec4 resultOld = imageLoad(resultImage, pixelCoord);
-    //result = vec4(resultOld.a * resultOld.rgb + (1 - resultOld.a) * result.rgb, resultOld.a + (1 - resultOld.a) * result.a);
-	//imageStore(resultImage, pixelCoord, resultOld + result);
+	imageStore(resultImage, pixelCoord, result);
 }

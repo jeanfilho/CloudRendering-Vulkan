@@ -8,7 +8,7 @@
 #include <vector>
 #include <set>
 #include <string>
-#include <chrono>
+#include <ctime>
 
 #define NOMINMAX // disable windows min and max functions
 #define GLFW_INCLUDE_VULKAN
