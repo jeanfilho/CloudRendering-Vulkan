@@ -1,6 +1,6 @@
 #version 450
 
-//#define USE_MARSAGLIA = 1;
+#define USE_MARSAGLIA = 1;
 
 //---------------------------------------------------------
 // Structs
@@ -172,8 +172,6 @@ vec4 getCloudColorProperty(in vec3 pos)
     return vec4(1.0f);
 }
 
-
-
 // HenyeyGreenstein from PBRT book
 float phaseHG(float cosTheta, float g)
 {
@@ -195,16 +193,8 @@ void createOrthonormalBasis(in const vec3 dir, out vec3 t0, out vec3 t1)
 //---------------------------------------------------------
 // PNRG and Noise functions
 //---------------------------------------------------------
-
-uint rng_state;
-void initializeRandom(uint seed) {
-	rng_state = seed;
-	/*[loop]
-	for (int i = 0; i < seed % 7 + 2; i++)
-		random();*/
-}
-
 #ifdef USE_MARSAGLIA
+shared uint rng_state;
 uint rand_xorshift()
 {
 	// Xorshift algorithm from George Marsaglia's paper
@@ -219,7 +209,14 @@ float generateRandomNumber()
 	return rand_xorshift() * (1.0 / 4294967296.0);
 }
 
+void initializeRandom(uint seed) {
+	rng_state = seed;
+	for (int i = 0; i < seed % 7 + 2; i++)
+	 	generateRandomNumber();
+}
+
 #else
+shared float rng_state;
 // Gold Noise ©2015 dcerisano@standard3d.com
 // - based on the Golden Ratio
 // - uniform normalized distribution
@@ -231,8 +228,14 @@ float gold_noise(in vec2 xy, in float seed){
 
 float generateRandomNumber()
 {
-    rng_state += uint(PHI);
+	rng_state += PHI;
     return gold_noise(gl_GlobalInvocationID.xy, rng_state);
+}
+
+void initializeRandom(uint seed) {
+	rng_state = seed;
+	for (int i = 0; i < seed % 7 + 2; i++)
+		generateRandomNumber();
 }
 
 #endif
@@ -299,7 +302,7 @@ float generateSample(in const vec3 incomingDirection, out vec3 sampleDirection, 
     {
         float phi = generateRandomNumber() * 2 * PI;
         float cosTheta = invertCDF(generateRandomNumber());
-        float sinTheta = sqrt(1.0f - cosTheta * cosTheta); // actually square of sinTheta
+        float sinTheta = sqrt(1.0f - cosTheta * cosTheta);
         vec3 direction = -incomingDirection;
         vec3 t0, t1;
 
@@ -327,7 +330,7 @@ bool integrateCloud(
     out vec4 weight)
 {
     vec3 exitPoint;
-    if(!intersectCloud(ray,exitPoint))
+    if(!intersectCloud(ray, exitPoint))
     {
         return false;
     }
@@ -385,13 +388,13 @@ bool integrateCloud(
 //---------------------------------------------------------
 void main() 
 {
-    initializeRandom(uint(pushConstants.seed + gl_GlobalInvocationID.x  + gl_GlobalInvocationID.y * cameraProperties.height));
+    initializeRandom(gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * cameraProperties.width);
 
     ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
     
     vec4 result = vec4(0.0f);
     vec4 throughput = vec4(1.0f);
-    Ray ray;
+    Ray ray;    
 
     // Get ray direction and volume entry point
     getCameraRay(pixelCoord, ray);
@@ -416,6 +419,7 @@ void main()
             {  
                 break;
             }
+            
             currentRay = ray;
 
             // Scatter point
@@ -428,11 +432,11 @@ void main()
             throughput *= transmittance;
             
             i++;
-        }
+        }        
         result = radiance;
 
-        vec4 resultOld = imageLoad(resultImage, pixelCoord);
-        result += resultOld;
+        //vec4 resultOld = imageLoad(resultImage, pixelCoord);
+        //result += resultOld;
     }
     
 	imageStore(resultImage, pixelCoord, result);

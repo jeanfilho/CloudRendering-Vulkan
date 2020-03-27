@@ -10,6 +10,16 @@ void tests::RunTests()
 	glm::vec3 t0, t1;
 	createOrthonormalBasis(dir, t0, t1);
 
+	CloudProperties cloudProperties;
+	cloudProperties.bounds[0] = glm::vec4(-100, -100, -100, 0);
+	cloudProperties.bounds[1] = glm::vec4(100, 100, 100, 0);
+
+	glm::vec3 intersectionPoint,
+		rayPos = glm::vec3(0, 0, -100),
+		rayDir = glm::normalize(glm::vec3(0, 0, 1));
+
+	intersectCloud(cloudProperties, rayDir, rayPos, intersectionPoint);
+
 	bool test = true;
 }
 

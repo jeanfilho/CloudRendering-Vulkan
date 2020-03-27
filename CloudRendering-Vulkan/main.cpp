@@ -90,7 +90,7 @@ void UpdateTime()
 	pushConstants.time = glfwGetTime();
 	frameCount++;
 	if (pushConstants.time - previousTime >= 1.0)
-	{ 
+	{
 		printf("%f ms/frame\n", 1000.0 / double(frameCount));
 		frameCount = 0;
 		previousTime += 1.0;
@@ -609,24 +609,26 @@ int main()
 	//cloudData->Copy(testData.data(), testData.size() * sizeof(float));
 
 	glm::vec3 cloudSize{
-		cloudData->GetVoxelSize().x * 500,
-		cloudData->GetVoxelSize().y * 500,
-		cloudData->GetVoxelSize().z * 500 };
+		cloudData->GetVoxelSize().x * 1000,
+		cloudData->GetVoxelSize().y * 1000,
+		cloudData->GetVoxelSize().z * 1000 };
 
 	cloudProperties.maxExtinction = cloudData->GetMajorant();
 	cloudProperties.voxelCount = glm::uvec4(cloudData->GetVoxelCount(), 0);
 	cloudProperties.bounds[0] = glm::vec4(
-		-cloudSize.x/2 * cloudProperties.voxelCount.x,
-		-cloudSize.y/2 * cloudProperties.voxelCount.y,
-		-cloudSize.z/2 * cloudProperties.voxelCount.z,
+		-cloudSize.x / 2 * cloudProperties.voxelCount.x,
+		-cloudSize.y / 2 * cloudProperties.voxelCount.y,
+		0,
 		0
 		);
-	cloudProperties.bounds[1] = -cloudProperties.bounds[0];
+	cloudProperties.bounds[1] = -cloudProperties.bounds[0] + glm::vec4(0, 0, cloudSize.z / 2 * cloudProperties.voxelCount.z, 0);
 	std::cout << "OK" << std::endl;
 
 	parameters.maxRayBounces = 1;
 	parameters.SetPhaseG(0);
-	
+
+	cameraProperties.position = glm::vec3(0, 0, -100);
+
 
 	// Initialize GLFW
 	if (!InitializeWindow())
