@@ -602,7 +602,7 @@ int main()
 	// Load cloud from a file
 	std::cout << "Loading cloud file...";
 
-	cloudData = Grid3D<float>::Load("../models/cloud-1090.xyz");
+	cloudData = Grid3D<float>::Load("../models/cloud-1940.xyz");
 	//cloudData = new Grid3D<float>(2, 2, 2, 200, 200, 200);
 	//std::vector<float> testData =
 	//{ 1, 0, 0, 0,
@@ -625,10 +625,10 @@ int main()
 	cloudProperties.bounds[1] = -cloudProperties.bounds[0] + glm::vec4(0, 0, cloudSize.z / 2 * cloudProperties.voxelCount.z, 0);
 	std::cout << "OK" << std::endl;
 
-	parameters.maxRayBounces = 3;
+	parameters.maxRayBounces = 7;
 	parameters.SetPhaseG(0);
 
-	cameraProperties.position = glm::vec3(0, 0, -100);
+	cameraProperties.position = glm::vec3(0, 0, -500);
 
 
 	// Initialize GLFW

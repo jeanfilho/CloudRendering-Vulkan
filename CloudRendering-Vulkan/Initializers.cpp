@@ -389,6 +389,8 @@ VkSamplerCreateInfo initializers::SamplerCreateInfo()
 	VkSamplerCreateInfo info{};
 	info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 	info.maxAnisotropy = 1.0f;
+	info.magFilter = VK_FILTER_LINEAR;
+	info.minFilter = VK_FILTER_LINEAR;
 	return info;
 }
 

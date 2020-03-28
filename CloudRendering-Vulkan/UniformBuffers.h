@@ -4,15 +4,15 @@
 
 struct CameraProperties
 {
-	glm::vec3 position = glm::vec3(0, 0, -100);
+	glm::vec3 position = glm::vec3(0, 0, 0);
 	int width = 1920;
 	glm::vec3 forward = glm::vec3(0, 0, 1);
 	int height = 1080;
 	glm::vec3 right = glm::vec3(1, 0, 0);
 	float nearPlane = 50.0f;
 	glm::vec3 up = glm::vec3(0, 1, 0);
-	float pixelSizeX = 1;
-	float pixelSizeY = 1;
+	float pixelSizeX = .1f;
+	float pixelSizeY = .1f;
 
 };
 

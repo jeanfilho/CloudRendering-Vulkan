@@ -1,6 +1,6 @@
 #version 450
 
-#define USE_MARSAGLIA = 1;
+#define USE_MARSAGLIA
 
 //---------------------------------------------------------
 // Structs
@@ -15,7 +15,7 @@ struct Ray
 //---------------------------------------------------------
 // Constants
 //---------------------------------------------------------
-const vec4 SKY_COLOR = vec4(0.53f/3, 0.81f/3, 0.92f/3, 1.0f);
+const vec4 SKY_COLOR = vec4(0.53f/2, 0.81f/2, 0.92f/2, 1.0f);
 const vec4 SUNLIGHT_COLOR = vec4(1.0f);
 const float PI = 3.14159265359;
 const float INV_4Pi = 1.0f/(4.0f * PI);
@@ -70,6 +70,12 @@ layout (push_constant) uniform PushConstants
 //---------------------------------------------------------
 // Helper Functions
 //---------------------------------------------------------
+
+vec4 sampleBackground(in vec3 dir)
+{
+    return dir.y > -.1f ? SKY_COLOR : vec4(0,.1,0.4,1);
+}
+
 float average(in vec4 data)
 {
     float accumulated = 0.0f;
@@ -150,6 +156,44 @@ bool intersectCloud(in Ray ray, out vec3 intersectionPoint)
     return true; 
 }
 
+void leaveCloud(in Ray ray, out vec3 intersectionPoint)
+{
+    float tmin, tmax, tymin, tymax, tzmin, tzmax;
+    vec3 invdir = 1 / ray.dir;
+    int sign[3] = {isNegativeSign(invdir.x), isNegativeSign(invdir.y), isNegativeSign(invdir.z)};
+
+    intersectionPoint = vec3(FLT_MAX);
+ 
+    tmin = (cloudProperties.bounds[sign[0]].x - ray.pos.x) * invdir.x; 
+    tmax = (cloudProperties.bounds[1-sign[0]].x - ray.pos.x) * invdir.x; 
+    tymin = (cloudProperties.bounds[sign[1]].y - ray.pos.y) * invdir.y; 
+    tymax = (cloudProperties.bounds[1-sign[1]].y - ray.pos.y) * invdir.y; 
+ 
+    if ((tmin > tymax) || (tymin > tmax)) 
+        return; 
+    if (tymin > tmin) 
+        tmin = tymin; 
+    if (tymax < tmax) 
+        tmax = tymax; 
+ 
+    tzmin = (cloudProperties.bounds[sign[2]].z - ray.pos.z) * invdir.z; 
+    tzmax = (cloudProperties.bounds[1-sign[2]].z - ray.pos.z) * invdir.z; 
+ 
+    //if ((tmin > tzmax) || (tzmin > tmax)) 
+    //    return false; 
+    if (tzmin > tmin) 
+        tmin = tzmin; 
+    if (tzmax < tmax) 
+        tmax = tzmax;
+
+    // We just want intersections in front of the ray
+    if(tmax < 0) // ray outside of the cloud, pointing away
+    {
+        return;
+    }
+	intersectionPoint = ray.pos + ray.dir * tmax;
+}
+
 bool isInCloud(in vec3 point)
 {
     return !(point.x < cloudProperties.bounds[0].x || 
@@ -163,7 +207,7 @@ bool isInCloud(in vec3 point)
 vec4 getCloudExtinctionProperty(in vec3 pos)
 {
     vec3 normalizedIdx = ((vec4(pos,0) - cloudProperties.bounds[0])/(cloudProperties.bounds[1] - cloudProperties.bounds[0])).xyz;
-    return texture(cloudSampler, normalizedIdx);
+    return vec4(texture(cloudSampler, normalizedIdx).x);
 }
 
 vec4 getCloudColorProperty(in vec3 pos)
@@ -193,7 +237,6 @@ void createOrthonormalBasis(in const vec3 dir, out vec3 t0, out vec3 t1)
 //---------------------------------------------------------
 // PNRG and Noise functions
 //---------------------------------------------------------
-#ifdef USE_MARSAGLIA
 uint rng_state = 0;
 uint rand_xorshift()
 {
@@ -214,31 +257,6 @@ void initializeRandom(uint seed) {
 	for (int i = 0; i < seed % 7 + 2; i++)
 	 	generateRandomNumber();
 }
-
-#else
-float rng_state = 0;
-// Gold Noise ©2015 dcerisano@standard3d.com
-// - based on the Golden Ratio
-// - uniform normalized distribution
-// - fastest static noise generator function (also runs at low precision)
-const float PHI = 1.61803398874989484820459;  // Φ = Golden Ratio   
-float gold_noise(in vec2 xy, in float seed){
-       return fract(tan(distance(xy*PHI, xy)*seed)*xy.x);
-}
-
-float generateRandomNumber()
-{
-	rng_state += PHI;
-    return gold_noise(gl_GlobalInvocationID.xy, rng_state);
-}
-
-void initializeRandom(uint seed) {
-	rng_state = seed;
-	/*for (int i = 0; i < seed % 7 + 2; i++)
-		generateRandomNumber();*/
-}
-
-#endif
 
 //---------------------------------------------------------
 // Phase BSDF - Henyey-Greenstein
@@ -326,10 +344,7 @@ bool integrateCloud(
     out vec4 transmittance)
 {
     vec3 exitPoint;
-    if(!intersectCloud(ray, exitPoint))
-    {
-        return false;
-    }
+    leaveCloud(ray, exitPoint);
 
     float dist = distance(ray.pos, exitPoint);
     bool terminated = false;
@@ -339,13 +354,13 @@ bool integrateCloud(
     do
     {
         float zeta = generateRandomNumber();
-        t = t - log(1 - zeta) / cloudProperties.maxExtinction;
+        t = t + -log(1 - zeta) / cloudProperties.maxExtinction;
         if (t > dist)
         {
             return false; // Left the cloud
         }
 
-        // Update the shading context
+        // Update the ray position
         vec3 currentPoint = ray.pos + t * ray.dir;
 
         // Recompute the local extinction after updating the shading context
@@ -372,7 +387,7 @@ bool integrateCloud(
 //---------------------------------------------------------
 void main() 
 {
-    initializeRandom(pushConstants.frameCount + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * cameraProperties.width);
+    initializeRandom(pushConstants.seed + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * cameraProperties.width);
 
     Ray ray;    
     vec4 result = vec4(0.0f);
@@ -384,9 +399,10 @@ void main()
 
     // Get ray direction and volume entry point
     getCameraRay(pixelCoord, ray);
-    if(!intersectCloud(ray, ray.pos))
+    vec3 rayPos = ray.pos;
+    if(!intersectCloud(ray, ray.pos) || isInCloud(rayPos))
     {
-        result = SKY_COLOR;        
+        result = sampleBackground(ray.dir);        
     }
     else
     {
@@ -402,15 +418,16 @@ void main()
             // Move along current ray direction
             if(!integrateCloud(ray, transmittance))
             {  
-                result += SKY_COLOR * throughput;               
+                result += sampleBackground(ray.dir);//* throughput;      // some skybox to see differences...         
                 break;
             }
 
             // Scatter point and sample pdf
             float pdf = generateSample(currentRay.dir, ray.dir);
 
-            result += SUNLIGHT_COLOR * pdf * transmittance * throughput;
-            throughput *= transmittance;
+            //result += SUNLIGHT_COLOR * pdf * transmittance * throughput; // you need to estimate real extinction to light direction and phase function is 
+			// between current ray direction and light direction , not scattered direction.
+            //throughput *= transmittance;  // this is not needed... the transmittance scalling is already considered in the probability of no-null collision
 
             currentRay = ray;
             
