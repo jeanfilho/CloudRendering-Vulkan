@@ -1,6 +1,6 @@
 #version 450
 
-#define USE_MARSAGLIA = 1;
+//#define USE_MARSAGLIA = 1;
 
 //---------------------------------------------------------
 // Structs
@@ -16,8 +16,7 @@ struct Ray
 // Constants
 //---------------------------------------------------------
 const vec4 SKY_COLOR = vec4(0.53f/3, 0.81f/3, 0.92f/3, 1.0f);
-const vec3 SUNLIGHT_DIRECTION = vec3(0.0f, -1.0f, 0.0f);
-const vec4 SUNLIGHT_COLOR = vec4(1.0f, 1.0f, 1.0f, 1.0f);
+const vec4 SUNLIGHT_COLOR = vec4(1.0f);
 const float PI = 3.14159265359;
 const float INV_4Pi = 1.0f/(4.0f * PI);
 const float FLT_MAX = 3.402823466e+38;
@@ -65,6 +64,7 @@ layout (push_constant) uniform PushConstants
 {
     double time;
     int seed;
+    uint frameCount;
 } pushConstants;
 
 //---------------------------------------------------------
@@ -194,7 +194,7 @@ void createOrthonormalBasis(in const vec3 dir, out vec3 t0, out vec3 t1)
 // PNRG and Noise functions
 //---------------------------------------------------------
 #ifdef USE_MARSAGLIA
-shared uint rng_state;
+uint rng_state = 0;
 uint rand_xorshift()
 {
 	// Xorshift algorithm from George Marsaglia's paper
@@ -216,7 +216,7 @@ void initializeRandom(uint seed) {
 }
 
 #else
-shared float rng_state;
+float rng_state = 0;
 // Gold Noise ©2015 dcerisano@standard3d.com
 // - based on the Golden Ratio
 // - uniform normalized distribution
@@ -234,8 +234,8 @@ float generateRandomNumber()
 
 void initializeRandom(uint seed) {
 	rng_state = seed;
-	for (int i = 0; i < seed % 7 + 2; i++)
-		generateRandomNumber();
+	/*for (int i = 0; i < seed % 7 + 2; i++)
+		generateRandomNumber();*/
 }
 
 #endif
@@ -255,7 +255,7 @@ float invertCDF(float xi)
 }
 
 // Evaluate radiance
-float evaluateSample(in const vec3 incomingDirection, in const vec3 sampleDirection, out vec4 radiance)
+float evaluateSample(in const vec3 incomingDirection, in const vec3 sampleDirection)
 {
     float pdf;
 
@@ -268,13 +268,12 @@ float evaluateSample(in const vec3 incomingDirection, in const vec3 sampleDirect
         float cosTheta = dot(-incomingDirection, sampleDirection);
         pdf = calculatePDF(cosTheta);
     }
-    
-    radiance = vec4(pdf);
+
     return pdf;
 }
 
 // Scatter ray and evaluate radiance
-float generateSample(in const vec3 incomingDirection, out vec3 sampleDirection, out vec4 radiance)
+float generateSample(in const vec3 incomingDirection, out vec3 sampleDirection)
 {
     float pdf;
 
@@ -313,7 +312,6 @@ float generateSample(in const vec3 incomingDirection, out vec3 sampleDirection, 
         pdf = calculatePDF(cosTheta);
     }
 
-    radiance = vec4(pdf);
     return pdf;
 }
 
@@ -321,13 +319,11 @@ float generateSample(in const vec3 incomingDirection, out vec3 sampleDirection, 
 // Cloud Integrator
 //---------------------------------------------------------
 
-// Update ray position based on scattering, and output radiance data
+// Update ray position based on scattering, and output trasnmittance to light in the scattered point
 // Returns wether ray is still in the cloud or not
 bool integrateCloud(
     inout Ray ray,
-    out vec4 radiance,
-    out vec4 transmittance,
-    out vec4 weight)
+    out vec4 transmittance)
 {
     vec3 exitPoint;
     if(!intersectCloud(ray, exitPoint))
@@ -335,7 +331,7 @@ bool integrateCloud(
         return false;
     }
 
-    float distance = distance(ray.pos, exitPoint);
+    float dist = distance(ray.pos, exitPoint);
     bool terminated = false;
     float t = 0;
 
@@ -344,7 +340,7 @@ bool integrateCloud(
     {
         float zeta = generateRandomNumber();
         t = t - log(1 - zeta) / cloudProperties.maxExtinction;
-        if (t > distance)
+        if (t > dist)
         {
             return false; // Left the cloud
         }
@@ -361,25 +357,13 @@ bool integrateCloud(
         }
     } while (!terminated);
 
-    if (terminated)
-    {
-        ray.pos = ray.pos + t * ray.dir;
-        transmittance = vec4(1.0f);
-        vec4 extinction = getCloudExtinctionProperty(ray.pos);
-        vec4 pdf = extinction * transmittance;
-        vec4 scatteringAlbedo = getCloudColorProperty(ray.pos);
+    // Advance ray to new position
+    ray.pos = ray.pos + t * ray.dir;
 
-        // Note that pdf already has extinction in it, so we should avoid the
-        // multiply and divide; it is shown here for clarity
-        weight = scatteringAlbedo * extinction / pdf;
-    }
-    else
-    {
-        transmittance = vec4(1.0f);
-        vec4 pdf = transmittance;
-        weight = 1.0 / pdf;
-    }
-    radiance = vec4(0.0); // No estimate of radiance
+    // Calculate Transmittance
+    vec4 extinction = getCloudExtinctionProperty(ray.pos);
+    transmittance = vec4(exp(-dist * extinction));
+
     return true;
 }
 
@@ -388,13 +372,15 @@ bool integrateCloud(
 //---------------------------------------------------------
 void main() 
 {
-    initializeRandom(gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * cameraProperties.width);
+    initializeRandom(pushConstants.seed + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * cameraProperties.width); // Modulo added due to Tan waves in gold noise
 
-    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
-    
+    Ray ray;    
     vec4 result = vec4(0.0f);
     vec4 throughput = vec4(1.0f);
-    Ray ray;    
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+
+    // imageStore(resultImage, pixelCoord, vec4(generateRandomNumber()));
+    // return;
 
     // Get ray direction and volume entry point
     getCameraRay(pixelCoord, ray);
@@ -405,39 +391,37 @@ void main()
     else
     {
         uint i = 0;
-        vec4 radiance;
-        vec4 currentRadiance = vec4(0,0,0,1);
-        vec4 transmittance;
-        vec4 weight;
-        Ray currentRay;
+        vec4 radiance = vec4(0.0f);
+        vec4 transmittance = vec4(0.0f);
+        vec4 throughput = vec4(1.0f);
+        Ray currentRay = ray;
 
         // Path tracer loop
         while(i < parameters.maxRayBounces)
         {
-            // Move along scatter direction and accumulate radiance
-            if(!integrateCloud(ray, radiance, transmittance, weight))
+            // Move along current ray direction
+            if(!integrateCloud(ray, transmittance))
             {  
+                result += SKY_COLOR * throughput;               
                 break;
             }
-            
-            currentRay = ray;
 
-            // Scatter point
-            generateSample(currentRay.dir, ray.dir, radiance);
+            // Scatter point and sample pdf
+            float pdf = generateSample(currentRay.dir, ray.dir);
 
-            // Sample radiance from new direction
-            //evaluateSample(currentRay.dir, ray.dir, radiance);
-
-            currentRadiance += weight * throughput * radiance;
+            result += SUNLIGHT_COLOR * pdf * transmittance * throughput;
             throughput *= transmittance;
+
+            currentRay = ray;
             
             i++;
         }        
-        result = radiance;
-
-        //vec4 resultOld = imageLoad(resultImage, pixelCoord);
-        //result += resultOld;
     }
+
+    // Accumulate result
+    vec4 resultOld = imageLoad(resultImage, pixelCoord);
+    result += resultOld * pushConstants.frameCount;
+    result /= pushConstants.frameCount + 1;
     
 	imageStore(resultImage, pixelCoord, result);
 }

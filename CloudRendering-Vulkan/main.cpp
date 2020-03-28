@@ -80,6 +80,7 @@ struct PushConstants
 {
 	double  time = 0;
 	int seed = 100;
+	unsigned int frameCount = 0;
 } pushConstants;
 
 //----------------------------------------------------------------------
@@ -558,10 +559,10 @@ void MainLoop()
 	{
 		glfwPollEvents();
 
-		UpdateTime();
 		pushConstants.seed = std::rand();
-
+		UpdateTime();
 		DrawFrame();
+		pushConstants.frameCount++;
 	}
 	std::cout << "Main Loop stopped" << std::endl;
 	vkDeviceWaitIdle(device->GetDevice());
@@ -624,7 +625,7 @@ int main()
 	cloudProperties.bounds[1] = -cloudProperties.bounds[0] + glm::vec4(0, 0, cloudSize.z / 2 * cloudProperties.voxelCount.z, 0);
 	std::cout << "OK" << std::endl;
 
-	parameters.maxRayBounces = 1;
+	parameters.maxRayBounces = 3;
 	parameters.SetPhaseG(0);
 
 	cameraProperties.position = glm::vec3(0, 0, -100);
