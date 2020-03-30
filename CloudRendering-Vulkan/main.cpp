@@ -191,6 +191,11 @@ void CopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer buffer, VkImage i
 	vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 }
 
+void RecordShadowVolumeUpdateCommands(VkCommandBuffer& commandBuffer)
+{
+
+}
+
 void RecordFrameCommands(uint32_t imageIndex)
 {
 	VkCommandBuffer& commandBuffer = computeCommandPool->GetCommandBuffers()[currentFrame];

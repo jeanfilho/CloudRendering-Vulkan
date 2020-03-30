@@ -70,7 +70,6 @@ layout (push_constant) uniform PushConstants
 //---------------------------------------------------------
 // Helper Functions
 //---------------------------------------------------------
-
 vec4 sampleBackground(in vec3 dir)
 {
     return dir.y > -.1f ? SKY_COLOR : vec4(0,.1,0.4,1);
@@ -89,14 +88,6 @@ float average(in vec4 data)
 int isNegativeSign(in float value)
 {
     return int(value < 0);
-}
-
-int getGridOffsetIndex(vec3 pos)
-{
-    uint x = uint(pos.x);
-    uint y = uint(pos.y);
-    uint z = uint(pos.z);
-    return int(z + y * cloudProperties.voxelCount.z + x * cloudProperties.voxelCount.y * cloudProperties.voxelCount.z);
 }
 
 void getCameraRay(in ivec2 coord, out Ray ray)

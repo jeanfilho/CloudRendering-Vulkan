@@ -1,0 +1,70 @@
+#version 450
+
+//---------------------------------------------------------
+// Descriptor Set
+//---------------------------------------------------------
+layout (binding = 0, r32f) uniform writeonly image3D shadowVolume;
+layout (binding = 1) uniform ShadowVolumeProperties
+{
+	vec4 lightDirection;
+    vec4 right;
+    vec4 up;
+    vec4 origin;
+    vec2 voxelSize;
+    uint depth;
+} shadowVolumeProperties;
+
+layout (binding = 2) uniform sampler3D cloudSampler;
+layout (binding = 3) uniform CloudProperties
+{
+    vec4 bounds[2];
+    uvec4 voxelCount;
+    float maxExtinction;
+} cloudProperties;
+
+//---------------------------------------------------------
+// Helper Functions
+//---------------------------------------------------------
+bool isInCloud(in vec3 point)
+{
+    return !(point.x < cloudProperties.bounds[0].x || 
+            point.y < cloudProperties.bounds[0].y || 
+            point.z < cloudProperties.bounds[0].z || 
+            point.x > cloudProperties.bounds[1].x || 
+            point.y > cloudProperties.bounds[1].y || 
+            point.z > cloudProperties.bounds[1].z );
+}
+
+vec4 sampleExtinction(in vec3 pos)
+{
+    vec3 normalizedIdx = ((vec4(pos,0) - cloudProperties.bounds[0])/(cloudProperties.bounds[1] - cloudProperties.bounds[0])).xyz;
+    return texture(cloudSampler, normalizedIdx);
+}
+
+vec3 calculateVoxelPosition(in uvec3 voxelIdx)
+{
+    return (shadowVolumeProperties.origin + 
+        voxelIdx.x * shadowVolumeProperties.right,
+        voxelIdx.y * shadowVolumeProperties.up,
+        voxelIdx.z * -shadowVolumeProperties.lightDirection).xyz;
+}
+
+//---------------------------------------------------------
+//  Main
+//---------------------------------------------------------
+void main() 
+{
+    uvec2 columnCoord = gl_GlobalInvocationID.xy;
+    vec4 accumulatedValue = vec4(0.0f);
+    vec3 position = vec3(0.0f);
+
+    for(uint z = 0; z < shadowVolumeProperties.depth; z++)
+    {
+        position = calculateVoxelPosition(uvec3(columnCoord, z));
+        if(isInCloud(position))
+        {
+            accumulatedValue += sampleExtinction(position);
+        }
+	    imageStore(shadowVolume, ivec3(gl_GlobalInvocationID.xy, z), accumulatedValue);
+    }
+}
