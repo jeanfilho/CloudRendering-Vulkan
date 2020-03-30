@@ -116,6 +116,13 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>call cd  "$(SolutionDir)shaders\"
+call ".\Compile.bat"</Command>
+    </PostBuildEvent>
+    <PostBuildEvent>
+      <Message>Post-Build: Building Shaders...</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -154,6 +161,13 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>call cd  "$(SolutionDir)shaders\"
+call ".\Compile.bat"</Command>
+    </PostBuildEvent>
+    <PostBuildEvent>
+      <Message>Post-Build: Building Shaders...</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Initializers.cpp" />

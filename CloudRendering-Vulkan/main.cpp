@@ -191,7 +191,7 @@ void CopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer buffer, VkImage i
 	vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 }
 
-void RecordCommands(uint32_t imageIndex)
+void RecordFrameCommands(uint32_t imageIndex)
 {
 	VkCommandBuffer& commandBuffer = computeCommandPool->GetCommandBuffers()[currentFrame];
 	VkImage swapchainImage = swapchain->GetSwapchainImages()[imageIndex];
@@ -514,7 +514,7 @@ void DrawFrame()
 	vkUpdateDescriptorSets(device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
 	// Record commands
-	RecordCommands(imageIndex);
+	RecordFrameCommands(imageIndex);
 
 	// Submit command buffer to queue
 	std::vector<VkCommandBuffer>& commandBuffers = computeCommandPool->GetCommandBuffers();
