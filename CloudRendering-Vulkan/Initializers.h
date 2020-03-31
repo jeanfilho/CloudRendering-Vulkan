@@ -62,7 +62,7 @@ namespace initializers
 
 	VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet dstSet, VkDescriptorType type, uint32_t binding, VkDescriptorBufferInfo* bufferInfo, VkBufferView* texelBufferView, uint32_t descriptorCount = 1);
 
-	VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet dstSet, VkDescriptorType type, uint32_t binding, VkDescriptorImageInfo* bufferInfo, uint32_t descriptorCount = 1);
+	VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet dstSet, VkDescriptorType type, uint32_t binding, VkDescriptorImageInfo* imageInfo, uint32_t descriptorCount = 1);
 
 	VkCopyDescriptorSet CopyDescriptorSet();
 

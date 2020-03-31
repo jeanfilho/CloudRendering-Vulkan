@@ -9,6 +9,7 @@
 #include <set>
 #include <string>
 #include <ctime>
+#include <thread>
 
 #define NOMINMAX // disable windows min and max functions
 #define GLFW_INCLUDE_VULKAN

@@ -20,6 +20,12 @@ void tests::RunTests()
 
 	intersectCloud(cloudProperties, rayDir, rayPos, intersectionPoint);
 
+	ShadowVolumeProperties shadowVolumeProperties;
+	shadowVolumeProperties.SetLightDirection(glm::vec3(0, -1, 0));
+	shadowVolumeProperties.SetOrigin(cloudProperties.bounds[0], cloudProperties.bounds[1]);
+
+	shadowVolumeTest(glm::ivec2(shadowVolumeProperties.voxelAxisCount) / 2, shadowVolumeProperties, cloudProperties);
+
 	bool test = true;
 }
 
@@ -83,4 +89,39 @@ bool tests::intersectCloud(CloudProperties cloudProperties, glm::vec3& rayDir, g
 	}
 
 	return true;
+}
+
+bool tests::shadowVolumeTest(glm::uvec2 columnCoord, ShadowVolumeProperties& shadowVolumeProperties, const CloudProperties& cloudProperties)
+{
+	glm::vec4 accumulatedValue = glm::vec4(0.0f);
+	glm::vec3 position = glm::vec3(0.0f);
+
+	for (unsigned int z = 0; z < shadowVolumeProperties.voxelAxisCount; z++)
+	{
+		position = tests::calculateVoxelPosition(glm::uvec3(columnCoord, z), shadowVolumeProperties);
+		if (tests::isInCloud(position, cloudProperties))
+		{
+			//accumulatedValue += sampleExtinction(position);
+		}
+	}
+
+	return true;
+}
+
+bool tests::isInCloud(glm::vec3 point, const CloudProperties& cloudProperties)
+{
+	return !(point.x < cloudProperties.bounds[0].x ||
+		point.y < cloudProperties.bounds[0].y ||
+		point.z < cloudProperties.bounds[0].z ||
+		point.x > cloudProperties.bounds[1].x ||
+		point.y > cloudProperties.bounds[1].y ||
+		point.z > cloudProperties.bounds[1].z);
+}
+
+glm::vec3 tests::calculateVoxelPosition(glm::uvec3 voxelIdx, ShadowVolumeProperties& shadowVolumeProperties)
+{
+	return (shadowVolumeProperties.bounds[0] +
+		voxelIdx.x * shadowVolumeProperties.voxelSize * shadowVolumeProperties.right +
+		voxelIdx.y * shadowVolumeProperties.voxelSize * shadowVolumeProperties.up +
+		voxelIdx.z * shadowVolumeProperties.voxelSize * -shadowVolumeProperties.lightDirection);
 }

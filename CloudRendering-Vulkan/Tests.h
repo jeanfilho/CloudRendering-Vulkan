@@ -1,6 +1,7 @@
 #pragma once
 
 struct CloudProperties;
+struct ShadowVolumeProperties;
 namespace tests
 {
 	void RunTests();
@@ -16,4 +17,10 @@ namespace tests
 	int isNegativeSign(float value);
 
 	bool intersectCloud(CloudProperties cloudProperties, glm::vec3& rayDir, glm::vec3& rayPos, glm::vec3& intersectionPoint);
+
+	bool shadowVolumeTest(glm::uvec2 columnCoord, ShadowVolumeProperties& shadowVolumeProperties, const CloudProperties& cloudProperties);
+
+	bool isInCloud(glm::vec3 point, const CloudProperties& cloudProperties);
+
+	glm::vec3 calculateVoxelPosition(glm::uvec3 voxelIdx, ShadowVolumeProperties& shadowVolumeProperties);
 }

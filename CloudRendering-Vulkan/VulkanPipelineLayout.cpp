@@ -4,7 +4,7 @@
 #include "VulkanDevice.h"
 #include "VulkanSwapchain.h"
 
-VulkanPipelineLayout::VulkanPipelineLayout(VulkanDevice* device, VulkanSwapchain* swapchain, std::vector<VkDescriptorSetLayout>& setLayouts, std::vector<VkPushConstantRange> pushConstantRanges)
+VulkanPipelineLayout::VulkanPipelineLayout(VulkanDevice* device, std::vector<VkDescriptorSetLayout>& setLayouts, std::vector<VkPushConstantRange>& pushConstantRanges)
 {
 	m_device = device;
 

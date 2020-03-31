@@ -199,5 +199,8 @@
     <None Include="..\shaders\PathTracer.comp">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="..\shaders\ShadowVolume.comp">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

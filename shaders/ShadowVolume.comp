@@ -6,12 +6,13 @@
 layout (binding = 0, r32f) uniform writeonly image3D shadowVolume;
 layout (binding = 1) uniform ShadowVolumeProperties
 {
+    vec4 bounds[2];
 	vec4 lightDirection;
     vec4 right;
     vec4 up;
-    vec4 origin;
-    vec2 voxelSize;
-    uint depth;
+    uint voxelAxisCount;
+    float voxelSize;
+
 } shadowVolumeProperties;
 
 layout (binding = 2) uniform sampler3D cloudSampler;
@@ -43,10 +44,10 @@ vec4 sampleExtinction(in vec3 pos)
 
 vec3 calculateVoxelPosition(in uvec3 voxelIdx)
 {
-    return (shadowVolumeProperties.origin + 
-        voxelIdx.x * shadowVolumeProperties.right,
-        voxelIdx.y * shadowVolumeProperties.up,
-        voxelIdx.z * -shadowVolumeProperties.lightDirection).xyz;
+    return (shadowVolumeProperties.bounds[0] + 
+        (voxelIdx.x  * shadowVolumeProperties.right +
+        voxelIdx.y * shadowVolumeProperties.up +
+        voxelIdx.z * -shadowVolumeProperties.lightDirection) * shadowVolumeProperties.voxelSize).xyz;
 }
 
 //---------------------------------------------------------
@@ -58,13 +59,14 @@ void main()
     vec4 accumulatedValue = vec4(0.0f);
     vec3 position = vec3(0.0f);
 
-    for(uint z = 0; z < shadowVolumeProperties.depth; z++)
+    for(uint z = 0; z < shadowVolumeProperties.voxelAxisCount; z++)
     {
         position = calculateVoxelPosition(uvec3(columnCoord, z));
         if(isInCloud(position))
         {
             accumulatedValue += sampleExtinction(position);
         }
-	    imageStore(shadowVolume, ivec3(gl_GlobalInvocationID.xy, z), accumulatedValue);
+        
+	    imageStore(shadowVolume, ivec3(gl_GlobalInvocationID.xy, z), accumulatedValue / (z+1));
     }
 }

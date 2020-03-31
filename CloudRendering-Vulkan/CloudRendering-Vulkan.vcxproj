@@ -238,6 +238,7 @@ call ".\Compile.bat"</Command>
   <ItemGroup>
     <None Include="..\shaders\ComputeTest.comp" />
     <None Include="..\shaders\PathTracer.comp" />
+    <None Include="..\shaders\ShadowVolume.comp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

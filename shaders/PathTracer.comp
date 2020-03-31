@@ -15,8 +15,9 @@ struct Ray
 //---------------------------------------------------------
 // Constants
 //---------------------------------------------------------
-const vec4 SKY_COLOR = vec4(0.53f/2, 0.81f/2, 0.92f/2, 1.0f);
-const vec4 SUNLIGHT_COLOR = vec4(1.0f);
+const vec4 TOP_SKY_COLOR = vec4(0.01f, 0.1f, 0.8f, 1.0f);
+const vec4 BOTTOM_SKY_COLOR = vec4(0.1f, 0.3f, 1.0f, 1.0f);
+const vec4 SUNLIGHT_COLOR = vec4(1.0f)/100;
 const float PI = 3.14159265359;
 const float INV_4Pi = 1.0f/(4.0f * PI);
 const float FLT_MAX = 3.402823466e+38;
@@ -60,6 +61,18 @@ layout (binding = 4) uniform Parameters
 
 } parameters;
 
+layout (binding = 5) uniform sampler3D shadowSampler;
+layout (binding = 6) uniform ShadowVolumeProperties
+{
+    vec4 bounds[2];
+	vec4 lightDirection;
+    vec4 right;
+    vec4 up;
+    uint voxelAxisCount;
+    float voxelSize;
+
+} shadowVolumeProperties;
+
 layout (push_constant) uniform PushConstants
 {
     double time;
@@ -72,7 +85,23 @@ layout (push_constant) uniform PushConstants
 //---------------------------------------------------------
 vec4 sampleBackground(in vec3 dir)
 {
-    return dir.y > -.1f ? SKY_COLOR : vec4(0,.1,0.4,1);
+    float value = (dot(dir, vec3(0,1,0)) + 1.f)/2.f;
+    return value * TOP_SKY_COLOR + (1 - value) * BOTTOM_SKY_COLOR;
+}
+
+
+vec4 sampleCloud(in vec3 pos)
+{
+    vec3 normalizedIdx = ((vec4(pos,0) - cloudProperties.bounds[0])/(cloudProperties.bounds[1] - cloudProperties.bounds[0])).xyz;
+    return vec4(texture(cloudSampler, normalizedIdx).x);
+}
+
+
+
+vec4 sampleShadowVolume(in vec3 pos)
+{
+    vec3 normalizedIdx = ((vec4(pos,0) - shadowVolumeProperties.bounds[0])/(shadowVolumeProperties.bounds[1] - shadowVolumeProperties.bounds[0])).xyz;
+    return vec4(texture(shadowSampler, normalizedIdx).x);
 }
 
 float average(in vec4 data)
@@ -193,12 +222,6 @@ bool isInCloud(in vec3 point)
             point.x > cloudProperties.bounds[1].x || 
             point.y > cloudProperties.bounds[1].y || 
             point.z > cloudProperties.bounds[1].z );
-}
-
-vec4 getCloudExtinctionProperty(in vec3 pos)
-{
-    vec3 normalizedIdx = ((vec4(pos,0) - cloudProperties.bounds[0])/(cloudProperties.bounds[1] - cloudProperties.bounds[0])).xyz;
-    return vec4(texture(cloudSampler, normalizedIdx).x);
 }
 
 vec4 getCloudColorProperty(in vec3 pos)
@@ -355,7 +378,7 @@ bool integrateCloud(
         vec3 currentPoint = ray.pos + t * ray.dir;
 
         // Recompute the local extinction after updating the shading context
-        vec4 extinction = getCloudExtinctionProperty(currentPoint);
+        vec4 extinction = sampleCloud(currentPoint);
         float xi = generateRandomNumber();
         if (xi < (average(extinction) / cloudProperties.maxExtinction))
         {
@@ -367,7 +390,7 @@ bool integrateCloud(
     ray.pos = ray.pos + t * ray.dir;
 
     // Calculate Transmittance
-    vec4 extinction = getCloudExtinctionProperty(ray.pos);
+    vec4 extinction = sampleCloud(ray.pos);
     transmittance = vec4(exp(-dist * extinction));
 
     return true;
@@ -404,21 +427,28 @@ void main()
         Ray currentRay = ray;
 
         // Path tracer loop
-        while(i < parameters.maxRayBounces)
+        while(i < 2)
         {
             // Move along current ray direction
             if(!integrateCloud(ray, transmittance))
             {  
-                result += sampleBackground(ray.dir);//* throughput;      // some skybox to see differences...         
+                result += sampleBackground(ray.dir);
                 break;
             }
 
-            // Scatter point and sample pdf
-            float pdf = generateSample(currentRay.dir, ray.dir);
+            // Sample pdf between ray and light directions
+            float pdf = evaluateSample(-ray.dir, -shadowVolumeProperties.lightDirection.xyz);
 
-            //result += SUNLIGHT_COLOR * pdf * transmittance * throughput; // you need to estimate real extinction to light direction and phase function is 
-			// between current ray direction and light direction , not scattered direction.
-            //throughput *= transmittance;  // this is not needed... the transmittance scalling is already considered in the probability of no-null collision
+            //vec4 accumulatedDensity = sampleShadowVolume(ray.pos);
+            vec4 accumulatedDensity = vec4(.1f);
+            Ray exitRay = {ray.pos, shadowVolumeProperties.lightDirection.xyz};
+            vec3 lightExit;
+            leaveCloud(exitRay, lightExit);
+            
+            result += 1.f * pdf * throughput * exp( -accumulatedDensity * distance(lightExit, ray.pos));
+            throughput *= transmittance;
+
+            generateSample(currentRay.dir, ray.dir);
 
             currentRay = ray;
             

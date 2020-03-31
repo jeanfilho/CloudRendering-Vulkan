@@ -22,8 +22,8 @@
 #include "VulkanDescriptorPool.h"
 
 #include "Grid3D.h"
-#include "UniformBuffers.h"
 #include "Tests.h"
+#include "UniformBuffers.h"
 
 //--------------------------------------------------------------
 // Globals
@@ -35,20 +35,30 @@ VulkanSurface* surface;
 VulkanSwapchain* swapchain;
 std::vector<VulkanImageView> swapchainImageViews;
 
-VulkanComputePipeline* computePipeline;
-VulkanPipelineLayout* computePipelineLayout;
 VulkanCommandPool* computeCommandPool;
-VulkanDescriptorSetLayout* computeDescriptorSetLayout;	// compute bindings layout
-std::vector<VkDescriptorSet> computeDescriptorSets;		// compute bindings
 VulkanDescriptorPool* computeDescriptorPool;
-VulkanShaderModule* computeShader;
-VulkanImage* computeResult;
-VulkanImageView* computeResultView;
+
+VulkanPipelineLayout* pathTracerPipelineLayout;
+VulkanComputePipeline* pathTracerPipeline;
+VulkanDescriptorSetLayout* pathTracerDescriptorSetLayout;	// compute bindings layout
+std::vector<VkDescriptorSet> pathTracerDescriptorSets;		// compute bindings
+VulkanShaderModule* pathTracerShader;
+VulkanImage* pathTracerImage;
+VulkanImageView* pathTraceImageView;
 
 Grid3D<float>* cloudData;
 VulkanImage* cloudImage;
 VulkanImageView* cloudImageView;
 VulkanSampler* cloudSampler;
+
+VulkanPipelineLayout* shadowVolumePipelineLayout;
+VulkanComputePipeline* shadowVolumePipeline;
+VulkanShaderModule* shadowVolumeShader;
+VulkanDescriptorSetLayout* shadowVolumeDescriptorSetLayout;
+std::vector<VkDescriptorSet> shadowVolumeDescriptorSets;
+VulkanImage* shadowVolumeImage;
+VulkanImageView* shadowVolumeImageView;
+VulkanSampler* shadowVolumeSampler;
 
 std::vector<VulkanSemaphore> imageAvailableSemaphores;
 std::vector<VulkanSemaphore> renderFinishedSemaphores;
@@ -64,9 +74,15 @@ const int MAX_FRAMES_IN_FLIGHT = 1;
 double previousTime = 0;
 unsigned int frameCount = 0;
 
+glm::vec3 lightDirection = { .5, -1, .5 };
+bool isShadowVolumeDirty = true;
+
 //--------------------------------------------------------------
 // Shader Resources
 //--------------------------------------------------------------
+ShadowVolumeProperties shadowVolumeProperties;
+VulkanBuffer* shadowVolumePropertiesBuffer;
+
 CameraProperties cameraProperties;
 VulkanBuffer* cameraPropertiesBuffer;
 
@@ -153,7 +169,7 @@ void EndSingleTimeCommands(VkCommandBuffer commandBuffer)
 	vkFreeCommandBuffers(device->GetDevice(), computeCommandPool->GetCommandPool(), 1, &commandBuffer);
 }
 
-void TransitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
+void CmdTransitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
 {
 	VkImageMemoryBarrier imgBarrier = {};
 	imgBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -173,7 +189,7 @@ void TransitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkForma
 	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &imgBarrier);
 }
 
-void CopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer buffer, VkImage image, VkExtent3D imageExtent)
+void CmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer buffer, VkImage image, VkExtent3D imageExtent)
 {
 	VkBufferImageCopy region = {};
 	region.bufferOffset = 0;
@@ -193,14 +209,22 @@ void CopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer buffer, VkImage i
 
 void RecordShadowVolumeUpdateCommands(VkCommandBuffer& commandBuffer)
 {
+	CmdTransitionImageLayout(commandBuffer, shadowVolumeImage->GetImage(), shadowVolumeImage->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
+	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, shadowVolumePipeline->GetPipeline());
+
+	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, shadowVolumePipelineLayout->GetPipelineLayout(), 0, static_cast<uint32_t>(shadowVolumeDescriptorSets.size()), shadowVolumeDescriptorSets.data(), 0, nullptr);
+
+	vkCmdDispatch(commandBuffer, shadowVolumeProperties.voxelAxisCount, shadowVolumeProperties.voxelAxisCount, 1);
+
+	CmdTransitionImageLayout(commandBuffer, shadowVolumeImage->GetImage(), shadowVolumeImage->GetFormat(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
 void RecordFrameCommands(uint32_t imageIndex)
 {
 	VkCommandBuffer& commandBuffer = computeCommandPool->GetCommandBuffers()[currentFrame];
 	VkImage swapchainImage = swapchain->GetSwapchainImages()[imageIndex];
-	VkImage computeImage = computeResult->GetImage();
+	VkImage computeImage = pathTracerImage->GetImage();
 
 	// Clear existing commands
 	vkResetCommandBuffer(commandBuffer, 0);
@@ -209,26 +233,25 @@ void RecordFrameCommands(uint32_t imageIndex)
 	vkBeginCommandBuffer(commandBuffer, &initializers::CommandBufferBeginInfo());
 
 	// Change Result Image Layout to writeable
-	TransitionImageLayout(commandBuffer, computeImage, computeResult->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+	CmdTransitionImageLayout(commandBuffer, computeImage, pathTracerImage->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
 	// Bind compute pipeline
-	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline->GetPipeline());
+	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pathTracerPipeline->GetPipeline());
 
 	// Bind descriptor set (resources)
-	std::vector<VkDescriptorSet>& descriptorSets = computeDescriptorPool->GetDescriptorSets();
-	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout->GetPipelineLayout(), 0, static_cast<uint32_t>(descriptorSets.size()), descriptorSets.data(), 0, nullptr);
+	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pathTracerPipelineLayout->GetPipelineLayout(), 0, static_cast<uint32_t>(pathTracerDescriptorSets.size()), pathTracerDescriptorSets.data(), 0, nullptr);
 
 	// Push constants
-	vkCmdPushConstants(commandBuffer, computePipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &pushConstants);
+	vkCmdPushConstants(commandBuffer, pathTracerPipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &pushConstants);
 
 	// Start compute shader
 	vkCmdDispatch(commandBuffer, cameraProperties.width, cameraProperties.height, 1);
 
 	// Change swapchain image layout to dst blit
-	TransitionImageLayout(commandBuffer, swapchainImage, computeResult->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	CmdTransitionImageLayout(commandBuffer, swapchainImage, pathTracerImage->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
 	// Change result image layout to scr blit
-	TransitionImageLayout(commandBuffer, computeImage, computeResult->GetFormat(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	CmdTransitionImageLayout(commandBuffer, computeImage, pathTracerImage->GetFormat(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
 	// Copy result to swapchain image
 	VkImageSubresourceLayers layers{};
@@ -236,7 +259,7 @@ void RecordFrameCommands(uint32_t imageIndex)
 	layers.layerCount = 1;
 	layers.mipLevel = 0;
 
-	VkExtent3D extents = computeResult->GetExtent();
+	VkExtent3D extents = pathTracerImage->GetExtent();
 	VkImageBlit blit{};
 	blit.srcOffsets[0] = { 0,0,0 };
 	blit.srcOffsets[1] = { static_cast<int32_t>(extents.width), static_cast<int32_t>(extents.height), static_cast<int32_t>(extents.depth) };
@@ -248,10 +271,46 @@ void RecordFrameCommands(uint32_t imageIndex)
 	vkCmdBlitImage(commandBuffer, computeImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
 
 	// Change swapchain image layout back to present
-	TransitionImageLayout(commandBuffer, swapchainImage, computeResult->GetFormat(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+	CmdTransitionImageLayout(commandBuffer, swapchainImage, pathTracerImage->GetFormat(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
 	// End recording
 	vkEndCommandBuffer(commandBuffer);
+}
+
+void UpdateShadowVolume()
+{
+	shadowVolumeProperties.SetLightDirection(lightDirection);
+
+	float encompassingRadius = std::max({
+		std::abs(cloudProperties.bounds[0].x - cloudProperties.bounds[1].x),
+		std::abs(cloudProperties.bounds[0].y - cloudProperties.bounds[1].y),
+		std::abs(cloudProperties.bounds[0].z - cloudProperties.bounds[1].z)
+		});
+	shadowVolumeProperties.SetOrigin(cloudProperties.bounds[0], cloudProperties.bounds[1]);
+	shadowVolumePropertiesBuffer->SetData();
+
+	// Update shadow volume descriptor set
+	auto bufferInfo = initializers::DescriptorBufferInfo(shadowVolumePropertiesBuffer->GetBuffer(), 0, shadowVolumePropertiesBuffer->GetSize());
+	VkWriteDescriptorSet write = initializers::WriteDescriptorSet(shadowVolumeDescriptorSets[0], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &bufferInfo);
+	vkUpdateDescriptorSets(device->GetDevice(), 1, &write, 0, nullptr);
+
+	// Wait until any calculations are done
+	vkQueueWaitIdle(device->GetComputeQueue());
+
+	// Send commands for updating volume
+	VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+	RecordShadowVolumeUpdateCommands(commandBuffer);
+	EndSingleTimeCommands(commandBuffer);
+
+	// Update path tracer descriptor set
+	std::vector<VkWriteDescriptorSet> writes;
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		writes.push_back(initializers::WriteDescriptorSet(pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6, &bufferInfo));
+	}
+	vkUpdateDescriptorSets(device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+
+	isShadowVolumeDirty = false;
 }
 
 void ClearSwapchain()
@@ -259,12 +318,12 @@ void ClearSwapchain()
 	std::cout << "Clearing swapchain...";
 
 	// Recreate result images. They should match the resolution of the screen
-	delete computeResultView;
-	delete computeResult;
+	delete pathTraceImageView;
+	delete pathTracerImage;
 
 	// Recreate the pipelines, since they depend on the swapchain
-	delete computePipeline;
-	delete computePipelineLayout;
+	delete pathTracerPipeline;
+	delete pathTracerPipelineLayout;
 
 	// Recreate swapchain image views and swapchain
 	swapchainImageViews.clear();
@@ -299,34 +358,127 @@ void CreateSwapchain()
 	}
 
 	// Compute result image and view
-	computeResult = new VulkanImage(device, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT, static_cast<uint32_t>(cameraProperties.width), static_cast<uint32_t>(cameraProperties.height));
-	computeResultView = new VulkanImageView(device, computeResult);
+	pathTracerImage = new VulkanImage(device, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT, static_cast<uint32_t>(cameraProperties.width), static_cast<uint32_t>(cameraProperties.height));
+	pathTraceImageView = new VulkanImageView(device, pathTracerImage);
 
 	// Update compute bindings for output image
 	std::vector<VkWriteDescriptorSet> writes;
-	auto imageInfo = initializers::DescriptorImageInfo(VK_NULL_HANDLE, computeResultView->GetImageView(), VK_IMAGE_LAYOUT_GENERAL);
+	auto imageInfo = initializers::DescriptorImageInfo(VK_NULL_HANDLE, pathTraceImageView->GetImageView(), VK_IMAGE_LAYOUT_GENERAL);
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		writes.push_back(initializers::WriteDescriptorSet(computeDescriptorSets[i], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &imageInfo));
+		writes.push_back(initializers::WriteDescriptorSet(pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &imageInfo));
 	};
 	vkUpdateDescriptorSets(device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-
-	// Compute pipeline;
-	std::vector<VkPushConstantRange> pushConstantRanges
-	{
-		initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants))
-	};
-	std::vector<VkDescriptorSetLayout> setLayouts;
-	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-	{
-		setLayouts.push_back(computeDescriptorSetLayout->GetLayout());
-	};
-	computePipelineLayout = new VulkanPipelineLayout(device, swapchain, setLayouts, pushConstantRanges);
-	computePipeline = new VulkanComputePipeline(device, computePipelineLayout, computeShader);
 
 	// Recreate command buffers
 	computeCommandPool->AllocateCommandBuffers(MAX_FRAMES_IN_FLIGHT);
 }
+
+void AllocateShaderResources()
+{
+	// Shader Modules
+	auto pathTracerSPV = ReadFile("../shaders/PathTracer.comp.spv");
+	pathTracerShader = new VulkanShaderModule(device, pathTracerSPV);
+
+	auto shadowVolumeSPV = ReadFile("../shaders/ShadowVolume.comp.spv");
+	shadowVolumeShader = new VulkanShaderModule(device, shadowVolumeSPV);
+
+
+	// Buffers & Images
+	cameraPropertiesBuffer = new VulkanBuffer(device, &cameraProperties, sizeof(CameraProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+	cloudPropertiesBuffer = new VulkanBuffer(device, &cloudProperties, sizeof(CloudProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+	parametersBuffer = new VulkanBuffer(device, &parameters, sizeof(Parameters), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+	cloudImage = new VulkanImage(
+		device,
+		VK_FORMAT_R32_SFLOAT,
+		VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		static_cast<uint32_t>(cloudProperties.voxelCount.x),
+		static_cast<uint32_t>(cloudProperties.voxelCount.y),
+		static_cast<uint32_t>(cloudProperties.voxelCount.z));
+	cloudImageView = new VulkanImageView(device, cloudImage);
+	cloudSampler = new VulkanSampler(device);
+
+	shadowVolumePropertiesBuffer = new VulkanBuffer(device, &shadowVolumeProperties, sizeof(ShadowVolumeProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+	shadowVolumeImage = new VulkanImage(device, VK_FORMAT_R32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, shadowVolumeProperties.voxelAxisCount, shadowVolumeProperties.voxelAxisCount, shadowVolumeProperties.voxelAxisCount);
+	shadowVolumeImageView = new VulkanImageView(device, shadowVolumeImage);
+	shadowVolumeSampler = new VulkanSampler(device);
+
+
+	// Transfer cloud data to device image and make it readable by the shader
+	cloudPropertiesBuffer->SetData();
+
+	VulkanBuffer stagingBuffer(device, cloudData->GetData(), cloudData->GetElementSize(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, cloudData->GetSize());
+	stagingBuffer.SetData();
+
+	VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+	CmdTransitionImageLayout(commandBuffer, cloudImage->GetImage(), cloudImage->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	CmdCopyBufferToImage(commandBuffer, stagingBuffer.GetBuffer(), cloudImage->GetImage(), cloudImage->GetExtent());
+	CmdTransitionImageLayout(commandBuffer, cloudImage->GetImage(), cloudImage->GetFormat(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	EndSingleTimeCommands(commandBuffer);
+
+	vkDeviceWaitIdle(device->GetDevice());
+
+
+	// Update static descriptor sets
+	std::vector<VkWriteDescriptorSet> cloudSetWrites;
+	auto shadowImageInfo = initializers::DescriptorImageInfo(shadowVolumeSampler->GetSampler(), shadowVolumeImageView->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	auto cloudImageInfo = initializers::DescriptorImageInfo(cloudSampler->GetSampler(), cloudImageView->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	auto cloudBufferInfo = initializers::DescriptorBufferInfo(cloudPropertiesBuffer->GetBuffer(), 0, cloudPropertiesBuffer->GetSize());
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		cloudSetWrites.push_back(initializers::WriteDescriptorSet(pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo));
+		cloudSetWrites.push_back(initializers::WriteDescriptorSet(pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
+		cloudSetWrites.push_back(initializers::WriteDescriptorSet(pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &shadowImageInfo));
+	};
+	vkUpdateDescriptorSets(device->GetDevice(), static_cast<uint32_t>(cloudSetWrites.size()), cloudSetWrites.data(), 0, nullptr);
+
+	shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	std::vector<VkWriteDescriptorSet> shadowVolumeWrites
+	{
+		initializers::WriteDescriptorSet(shadowVolumeDescriptorSets[0], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &shadowImageInfo),
+		initializers::WriteDescriptorSet(shadowVolumeDescriptorSets[0], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo),
+		initializers::WriteDescriptorSet(shadowVolumeDescriptorSets[0], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo)
+	};
+	vkUpdateDescriptorSets(device->GetDevice(), static_cast<uint32_t>(shadowVolumeWrites.size()), shadowVolumeWrites.data(), 0, nullptr);
+}
+
+void AllocatePipelines()
+{
+	// Shadow volume pipeline;
+	std::vector<VkPushConstantRange> svPushConstantRanges;
+	std::vector<VkDescriptorSetLayout> svSetLayouts{ shadowVolumeDescriptorSetLayout->GetLayout() };
+	shadowVolumePipelineLayout = new VulkanPipelineLayout(device, svSetLayouts, svPushConstantRanges);
+	shadowVolumePipeline = new VulkanComputePipeline(device, shadowVolumePipelineLayout, shadowVolumeShader);
+
+	// Path tracer pipeline;
+	std::vector<VkPushConstantRange> ptPushConstantRanges
+	{
+		initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants))
+	};
+	std::vector<VkDescriptorSetLayout> ptSetLayouts;
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		ptSetLayouts.push_back(pathTracerDescriptorSetLayout->GetLayout());
+	};
+	pathTracerPipelineLayout = new VulkanPipelineLayout(device, ptSetLayouts, ptPushConstantRanges);
+	pathTracerPipeline = new VulkanComputePipeline(device, pathTracerPipelineLayout, pathTracerShader);
+
+	// Swapchain and its dependent objects
+	CreateSwapchain();
+
+	// Semaphores (GPU-GPU) and Fences (CPU-GPU)
+	imageAvailableSemaphores.reserve(MAX_FRAMES_IN_FLIGHT);
+	renderFinishedSemaphores.reserve(MAX_FRAMES_IN_FLIGHT);
+	inFlightFences.reserve(MAX_FRAMES_IN_FLIGHT);
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		imageAvailableSemaphores.emplace_back(device);
+		renderFinishedSemaphores.emplace_back(device);
+		inFlightFences.emplace_back(device);
+	}
+	imagesInFlight.resize(swapchain->GetSwapchainImages().size(), VK_NULL_HANDLE);
+}
+
 
 bool IntializeVulkan()
 {
@@ -357,98 +509,67 @@ bool IntializeVulkan()
 	// Command Pool
 	computeCommandPool = new VulkanCommandPool(device, physicalDevice->GetQueueFamilyIndices().computeFamily);
 
-	// Shader Modules
-	auto computeSPV = ReadFile("../shaders/PathTracer.comp.spv");
-	computeShader = new VulkanShaderModule(device, computeSPV);
-
-	// Compute Descriptor Set Layout
-	std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
-		// Binding 0: Output image (write)
+	// Path Tracer Descriptor Set Layout
+	std::vector<VkDescriptorSetLayoutBinding> pathTracerSetLayoutBindings = {
+		// Binding 0: Output 2D image (write)
 		initializers::DescriptorSetLayoutBinding(0, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
 		// Binding 1: Camera properties (read)
 		initializers::DescriptorSetLayoutBinding(1, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
-		// Binding 2: Cloud grid texel buffer (read)
+		// Binding 2: Cloud grid 3D sampler (read)
 		initializers::DescriptorSetLayoutBinding(2, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
 		// Binding 3: Cloud Properties (read)
 		initializers::DescriptorSetLayoutBinding(3, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
 		// Binding 4: Parameters (read)
 		initializers::DescriptorSetLayoutBinding(4, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
+		// Binding 5: Shadow volume 3D sampler (read)
+		initializers::DescriptorSetLayoutBinding(5, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
+		// Binding 5: Shadow volume properties (read)
+		initializers::DescriptorSetLayoutBinding(6, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
 	};
-	computeDescriptorSetLayout = new VulkanDescriptorSetLayout(device, setLayoutBindings);
+	pathTracerDescriptorSetLayout = new VulkanDescriptorSetLayout(device, pathTracerSetLayoutBindings);
+
+	// Shadow Volume Descriptor Set Layout
+	std::vector<VkDescriptorSetLayoutBinding> shadowVolumeLayoutBindings = {
+		// Binding 0: Output 3D image (write)
+		initializers::DescriptorSetLayoutBinding(0, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+		// Binding 1: Shadow volume properties (read)
+		initializers::DescriptorSetLayoutBinding(1, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
+		// Binding 2: Cloud grid texel buffer (read)
+		initializers::DescriptorSetLayoutBinding(2, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
+		// Binding 3: Cloud Properties (read)
+		initializers::DescriptorSetLayoutBinding(3, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+	};
+	shadowVolumeDescriptorSetLayout = new VulkanDescriptorSetLayout(device, shadowVolumeLayoutBindings);
+
 
 	// Compute Descriptor Pool
 	std::vector<VkDescriptorPoolSize> poolSizes =
 	{
-		initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 * MAX_FRAMES_IN_FLIGHT),			// Cloud Properties + Camera Properties + Parameters
-		initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 * MAX_FRAMES_IN_FLIGHT),	// Cloud grid sampler3D
-		initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 * MAX_FRAMES_IN_FLIGHT),			// Render image
+		initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 * MAX_FRAMES_IN_FLIGHT + 2),			// (Cloud Properties + Camera Properties + Parameters) * Frames in flight + Shadow Volume Properties
+		initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 * MAX_FRAMES_IN_FLIGHT + 1),	// Cloud grid sampler3D, Shadow Volume sampler
+		initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 * MAX_FRAMES_IN_FLIGHT + 1),			// Render image
 	};
-	std::vector<VkDescriptorSetLayout> setLayouts;
+	std::vector<VkDescriptorSetLayout> pathTracerSetLayouts;
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		setLayouts.push_back(computeDescriptorSetLayout->GetLayout());
+		pathTracerSetLayouts.push_back(pathTracerDescriptorSetLayout->GetLayout());
 	};
-	computeDescriptorPool = new VulkanDescriptorPool(device, poolSizes, static_cast<uint32_t>(setLayoutBindings.size() + MAX_FRAMES_IN_FLIGHT));
-	computeDescriptorPool->AllocateSets(setLayouts, computeDescriptorSets);
 
-	// Buffers & Images
-	cameraPropertiesBuffer = new VulkanBuffer(device, &cameraProperties, sizeof(CameraProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-	cloudPropertiesBuffer = new VulkanBuffer(device, &cloudProperties, sizeof(CloudProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-	parametersBuffer = new VulkanBuffer(device, &parameters, sizeof(Parameters), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-	cloudImage = new VulkanImage(
-		device,
-		VK_FORMAT_R32_SFLOAT,
-		VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-		static_cast<uint32_t>(cloudProperties.voxelCount.x),
-		static_cast<uint32_t>(cloudProperties.voxelCount.y),
-		static_cast<uint32_t>(cloudProperties.voxelCount.z));
-	cloudImageView = new VulkanImageView(device, cloudImage);
-	cloudSampler = new VulkanSampler(device);
+	std::vector<VkDescriptorSetLayout> shadowVolumeSetLayouts;
+	shadowVolumeSetLayouts.push_back(shadowVolumeDescriptorSetLayout->GetLayout());
 
-	// Transfer cloud data to device image and make it readable by the shader
-	cloudPropertiesBuffer->SetData();
+	computeDescriptorPool = new VulkanDescriptorPool(device, poolSizes, static_cast<uint32_t>(shadowVolumeLayoutBindings.size() + pathTracerSetLayoutBindings.size() + MAX_FRAMES_IN_FLIGHT));
 
-	VulkanBuffer stagingBuffer(device, cloudData->GetData(), cloudData->GetElementSize(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, cloudData->GetSize());
-	stagingBuffer.SetData();
+	computeDescriptorPool->AllocateSets(pathTracerSetLayouts, pathTracerDescriptorSets);
+	computeDescriptorPool->AllocateSets(shadowVolumeSetLayouts, shadowVolumeDescriptorSets);
 
-	VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
-	TransitionImageLayout(commandBuffer, cloudImage->GetImage(), cloudImage->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-	CopyBufferToImage(commandBuffer, stagingBuffer.GetBuffer(), cloudImage->GetImage(), cloudImage->GetExtent());
-	TransitionImageLayout(commandBuffer, cloudImage->GetImage(), cloudImage->GetFormat(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-	EndSingleTimeCommands(commandBuffer);
-
-	vkDeviceWaitIdle(device->GetDevice());
-
-	// Update static descriptor sets
-	std::vector<VkWriteDescriptorSet> writes;
-	auto imageInfo = initializers::DescriptorImageInfo(cloudSampler->GetSampler(), cloudImageView->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-	auto bufferInfo = initializers::DescriptorBufferInfo(cloudPropertiesBuffer->GetBuffer(), 0, cloudPropertiesBuffer->GetSize());
-	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-	{
-		writes.push_back(initializers::WriteDescriptorSet(computeDescriptorSets[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &imageInfo));
-		writes.push_back(initializers::WriteDescriptorSet(computeDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &bufferInfo));
-	};
-	vkUpdateDescriptorSets(device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-
-	// Swapchain and dependent objects
-	CreateSwapchain();
-
-	// Semaphores (GPU-GPU) and Fences (CPU-GPU)
-	imageAvailableSemaphores.reserve(MAX_FRAMES_IN_FLIGHT);
-	renderFinishedSemaphores.reserve(MAX_FRAMES_IN_FLIGHT);
-	inFlightFences.reserve(MAX_FRAMES_IN_FLIGHT);
-	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-	{
-		imageAvailableSemaphores.emplace_back(device);
-		renderFinishedSemaphores.emplace_back(device);
-		inFlightFences.emplace_back(device);
-	}
-	imagesInFlight.resize(swapchain->GetSwapchainImages().size(), VK_NULL_HANDLE);
+	AllocateShaderResources();
+	AllocatePipelines();
 
 	std::cout << "OK" << std::endl;
+
 	return true;
 }
-
 
 void Clear()
 {
@@ -459,8 +580,18 @@ void Clear()
 	renderFinishedSemaphores.clear();
 	imageAvailableSemaphores.clear();
 
+	// Shadow Volume
+	delete shadowVolumePipeline;
+	delete shadowVolumePipelineLayout;
+	delete shadowVolumeShader;
+	delete shadowVolumeDescriptorSetLayout;
+	delete shadowVolumeImage;
+	delete shadowVolumeImageView;
+	delete shadowVolumeSampler;
+	delete shadowVolumePropertiesBuffer;
 
-	// GPU Memory Allocations
+
+	// Cloud Memory Allocations
 	delete cloudImageView;
 	delete cloudSampler;
 	delete cloudImage;
@@ -468,13 +599,13 @@ void Clear()
 	delete cloudPropertiesBuffer;
 	delete parametersBuffer;
 
-	// Compute resources
-	delete computeShader;
+	// Compute Resources
+	delete pathTracerShader;
 	delete computeCommandPool;
 	delete computeDescriptorPool;
-	delete computeDescriptorSetLayout;
+	delete pathTracerDescriptorSetLayout;
 
-	// Vulkan general resources
+	// Vulkan General Resources
 	delete device;
 	delete physicalDevice;
 	delete surface;
@@ -513,8 +644,8 @@ void DrawFrame()
 	auto parameterInfo = initializers::DescriptorBufferInfo(cameraPropertiesBuffer->GetBuffer(), 0, cameraPropertiesBuffer->GetSize());
 	auto cameraPropertiesInfo = initializers::DescriptorBufferInfo(parametersBuffer->GetBuffer(), 0, parametersBuffer->GetSize());
 	std::vector<VkWriteDescriptorSet> writes{
-		initializers::WriteDescriptorSet(computeDescriptorSets[currentFrame], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &parameterInfo),
-		initializers::WriteDescriptorSet(computeDescriptorSets[currentFrame], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &cameraPropertiesInfo)
+		initializers::WriteDescriptorSet(pathTracerDescriptorSets[currentFrame], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &parameterInfo),
+		initializers::WriteDescriptorSet(pathTracerDescriptorSets[currentFrame], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &cameraPropertiesInfo)
 	};
 	vkUpdateDescriptorSets(device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
@@ -557,21 +688,32 @@ void DrawFrame()
 	currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void MainLoop()
+void RenderLoop()
 {
-	std::cout << "Main Loop started" << std::endl;
+	std::cout << "Render Loop started" << std::endl;
 	while (!glfwWindowShouldClose(window))
 	{
-		glfwPollEvents();
+		if (isShadowVolumeDirty)
+		{
+			UpdateShadowVolume();
+		}
 
 		pushConstants.seed = std::rand();
 		UpdateTime();
 		DrawFrame();
 		pushConstants.frameCount++;
 	}
-	std::cout << "Main Loop stopped" << std::endl;
+	std::cout << "Render Loop stopped" << std::endl;
 	vkDeviceWaitIdle(device->GetDevice());
 	std::cout << "Device Finished" << std::endl;
+}
+
+void InputLoop()
+{
+	while (!glfwWindowShouldClose(window))
+	{
+		glfwPollEvents();
+	}
 }
 
 void FramebufferResizeCallback(GLFWwindow* window, int width, int height)
@@ -628,10 +770,11 @@ int main()
 		0
 		);
 	cloudProperties.bounds[1] = -cloudProperties.bounds[0] + glm::vec4(0, 0, cloudSize.z / 2 * cloudProperties.voxelCount.z, 0);
+
 	std::cout << "OK" << std::endl;
 
 	parameters.maxRayBounces = 7;
-	parameters.SetPhaseG(0);
+	parameters.SetPhaseG(0.67f);
 
 	cameraProperties.position = glm::vec3(0, 0, -500);
 
@@ -648,7 +791,10 @@ int main()
 		return 1;
 	}
 
-	MainLoop();
+	std::thread renderThread(RenderLoop);
+	InputLoop();
+
+	renderThread.join();
 	Clear();
 
 	delete cloudData;
