@@ -1,5 +1,6 @@
 #version 450
 
+layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 //---------------------------------------------------------
 // Descriptor Set
 //---------------------------------------------------------
@@ -47,7 +48,17 @@ vec3 calculateVoxelPosition(in uvec3 voxelIdx)
     return (shadowVolumeProperties.bounds[0] + 
         (voxelIdx.x  * shadowVolumeProperties.right +
         voxelIdx.y * shadowVolumeProperties.up +
-        voxelIdx.z * -shadowVolumeProperties.lightDirection) * shadowVolumeProperties.voxelSize).xyz;
+        voxelIdx.z * shadowVolumeProperties.lightDirection) * shadowVolumeProperties.voxelSize).xyz;
+}
+
+float average(in vec4 data)
+{
+    float accumulated = 0.0f;
+    for(int i = 0; i < 4; i++)
+    {
+        accumulated += data[i];
+    }
+    return accumulated/4.0f;
 }
 
 //---------------------------------------------------------
@@ -59,14 +70,37 @@ void main()
     vec4 accumulatedValue = vec4(0.0f);
     vec3 position = vec3(0.0f);
 
+    bool firstHit = false;
+    uint sampleCount = 1;
+    vec4 sampleValue = vec4(0.0f);
     for(uint z = 0; z < shadowVolumeProperties.voxelAxisCount; z++)
     {
         position = calculateVoxelPosition(uvec3(columnCoord, z));
         if(isInCloud(position))
         {
-            accumulatedValue += sampleExtinction(position);
+            sampleValue = sampleExtinction(position);
+            if(!firstHit)
+            {
+                if(average(sampleValue) > 0.0001f)
+                {
+                    firstHit = true;
+                }
+            }
+            
+            if(firstHit)
+            {
+                accumulatedValue += sampleValue;
+	            imageStore(shadowVolume, ivec3(gl_GlobalInvocationID.xy, z), accumulatedValue / sampleCount);
+                sampleCount++;
+            }
+            else
+            {
+	            imageStore(shadowVolume, ivec3(gl_GlobalInvocationID.xy, z), vec4(0));
+            }
         }
-        
-	    imageStore(shadowVolume, ivec3(gl_GlobalInvocationID.xy, z), accumulatedValue / (z+1));
+        else
+        {
+            imageStore(shadowVolume, ivec3(gl_GlobalInvocationID.xy, z), vec4(0));
+        }
     }
 }

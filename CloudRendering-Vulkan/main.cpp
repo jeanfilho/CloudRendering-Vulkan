@@ -72,10 +72,12 @@ GLFWwindow* window;
 const int MAX_FRAMES_IN_FLIGHT = 1;
 
 double previousTime = 0;
-unsigned int frameCount = 0;
+unsigned int framesInSecond = 0;
 
-glm::vec3 lightDirection = { .5, -1, .5 };
+glm::vec3 lightDirection = { 0, 0, 1 };
+
 bool isShadowVolumeDirty = true;
+bool exitProgram = false;
 
 //--------------------------------------------------------------
 // Shader Resources
@@ -105,11 +107,10 @@ struct PushConstants
 void UpdateTime()
 {
 	pushConstants.time = glfwGetTime();
-	frameCount++;
 	if (pushConstants.time - previousTime >= 1.0)
 	{
-		printf("%f ms/frame\n", 1000.0 / double(frameCount));
-		frameCount = 0;
+		printf("%f ms/frame\n", 1000.0 / double(framesInSecond));
+		framesInSecond = 0;
 		previousTime += 1.0;
 	}
 }
@@ -280,12 +281,6 @@ void RecordFrameCommands(uint32_t imageIndex)
 void UpdateShadowVolume()
 {
 	shadowVolumeProperties.SetLightDirection(lightDirection);
-
-	float encompassingRadius = std::max({
-		std::abs(cloudProperties.bounds[0].x - cloudProperties.bounds[1].x),
-		std::abs(cloudProperties.bounds[0].y - cloudProperties.bounds[1].y),
-		std::abs(cloudProperties.bounds[0].z - cloudProperties.bounds[1].z)
-		});
 	shadowVolumeProperties.SetOrigin(cloudProperties.bounds[0], cloudProperties.bounds[1]);
 	shadowVolumePropertiesBuffer->SetData();
 
@@ -691,7 +686,7 @@ void DrawFrame()
 void RenderLoop()
 {
 	std::cout << "Render Loop started" << std::endl;
-	while (!glfwWindowShouldClose(window))
+	while (!exitProgram)
 	{
 		if (isShadowVolumeDirty)
 		{
@@ -699,9 +694,9 @@ void RenderLoop()
 		}
 
 		pushConstants.seed = std::rand();
-		UpdateTime();
 		DrawFrame();
 		pushConstants.frameCount++;
+		framesInSecond++;
 	}
 	std::cout << "Render Loop stopped" << std::endl;
 	vkDeviceWaitIdle(device->GetDevice());
@@ -712,8 +707,11 @@ void InputLoop()
 {
 	while (!glfwWindowShouldClose(window))
 	{
+		UpdateTime();
 		glfwPollEvents();
 	}
+
+	exitProgram = true;
 }
 
 void FramebufferResizeCallback(GLFWwindow* window, int width, int height)
@@ -757,24 +755,24 @@ int main()
 	//cloudData->Copy(testData.data(), testData.size() * sizeof(float));
 
 	glm::vec3 cloudSize{
-		cloudData->GetVoxelSize().x * 1000,
-		cloudData->GetVoxelSize().y * 1000,
-		cloudData->GetVoxelSize().z * 1000 };
+		cloudData->GetVoxelSize().x * cloudData->GetVoxelCount().x * 1000,
+		cloudData->GetVoxelSize().y * cloudData->GetVoxelCount().y * 1000,
+		cloudData->GetVoxelSize().z * cloudData->GetVoxelCount().z * 1000 };
 
 	cloudProperties.maxExtinction = cloudData->GetMajorant();
 	cloudProperties.voxelCount = glm::uvec4(cloudData->GetVoxelCount(), 0);
 	cloudProperties.bounds[0] = glm::vec4(
-		-cloudSize.x / 2 * cloudProperties.voxelCount.x,
-		-cloudSize.y / 2 * cloudProperties.voxelCount.y,
+		-cloudSize.x / 2,
+		-cloudSize.y / 2,
 		0,
 		0
-		);
-	cloudProperties.bounds[1] = -cloudProperties.bounds[0] + glm::vec4(0, 0, cloudSize.z / 2 * cloudProperties.voxelCount.z, 0);
+	);
+	cloudProperties.bounds[1] = -cloudProperties.bounds[0] + glm::vec4(0, 0, cloudSize.z, 0);
 
 	std::cout << "OK" << std::endl;
 
 	parameters.maxRayBounces = 7;
-	parameters.SetPhaseG(0.67f);
+	parameters.SetPhaseG(0);
 
 	cameraProperties.position = glm::vec3(0, 0, -500);
 

@@ -1,7 +1,6 @@
 #version 450
 
-#define USE_MARSAGLIA
-
+layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 //---------------------------------------------------------
 // Structs
 //---------------------------------------------------------
@@ -17,7 +16,7 @@ struct Ray
 //---------------------------------------------------------
 const vec4 TOP_SKY_COLOR = vec4(0.01f, 0.1f, 0.8f, 1.0f);
 const vec4 BOTTOM_SKY_COLOR = vec4(0.1f, 0.3f, 1.0f, 1.0f);
-const vec4 SUNLIGHT_COLOR = vec4(1.0f)/100;
+const vec4 SUNLIGHT_COLOR = vec4(1.0f);
 const float PI = 3.14159265359;
 const float INV_4Pi = 1.0f/(4.0f * PI);
 const float FLT_MAX = 3.402823466e+38;
@@ -89,14 +88,11 @@ vec4 sampleBackground(in vec3 dir)
     return value * TOP_SKY_COLOR + (1 - value) * BOTTOM_SKY_COLOR;
 }
 
-
 vec4 sampleCloud(in vec3 pos)
 {
     vec3 normalizedIdx = ((vec4(pos,0) - cloudProperties.bounds[0])/(cloudProperties.bounds[1] - cloudProperties.bounds[0])).xyz;
     return vec4(texture(cloudSampler, normalizedIdx).x);
 }
-
-
 
 vec4 sampleShadowVolume(in vec3 pos)
 {
@@ -206,11 +202,6 @@ void leaveCloud(in Ray ray, out vec3 intersectionPoint)
     if (tzmax < tmax) 
         tmax = tzmax;
 
-    // We just want intersections in front of the ray
-    if(tmax < 0) // ray outside of the cloud, pointing away
-    {
-        return;
-    }
 	intersectionPoint = ray.pos + ray.dir * tmax;
 }
 
@@ -287,7 +278,7 @@ float invertCDF(float xi)
 }
 
 // Evaluate radiance
-float evaluateSample(in const vec3 incomingDirection, in const vec3 sampleDirection)
+float samplePhase(in const vec3 incomingDirection, in const vec3 sampleDirection)
 {
     float pdf;
 
@@ -305,7 +296,7 @@ float evaluateSample(in const vec3 incomingDirection, in const vec3 sampleDirect
 }
 
 // Scatter ray and evaluate radiance
-float generateSample(in const vec3 incomingDirection, out vec3 sampleDirection)
+void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
 {
     float pdf;
 
@@ -326,8 +317,6 @@ float generateSample(in const vec3 incomingDirection, out vec3 sampleDirection)
         {
             sampleDirection.x = sampleDirection.y = 0.0;
         }
-
-        pdf = 0.25 / PI;
     }
     else
     {
@@ -340,13 +329,8 @@ float generateSample(in const vec3 incomingDirection, out vec3 sampleDirection)
         createOrthonormalBasis(direction, t0, t1);
         sampleDirection = sinTheta * sin(phi) * t0 + sinTheta * cos(phi) * t1 +
                       cosTheta * direction;
-
-        pdf = calculatePDF(cosTheta);
     }
-
-    return pdf;
 }
-
 //---------------------------------------------------------
 // Cloud Integrator
 //---------------------------------------------------------
@@ -379,6 +363,8 @@ bool integrateCloud(
 
         // Recompute the local extinction after updating the shading context
         vec4 extinction = sampleCloud(currentPoint);
+        //vec4 extinction = sampleShadowVolume(currentPoint);
+        
         float xi = generateRandomNumber();
         if (xi < (average(extinction) / cloudProperties.maxExtinction))
         {
@@ -424,31 +410,41 @@ void main()
         vec4 radiance = vec4(0.0f);
         vec4 transmittance = vec4(0.0f);
         vec4 throughput = vec4(1.0f);
+        vec4 accumulatedDensity = vec4(0.0f);
+        float pdf;
+        Ray lightRay;
         Ray currentRay = ray;
 
         // Path tracer loop
-        while(i < 2)
+        while(true)
         {
-            // Move along current ray direction
+            // No contribution anymore, add ambient light
+            if(throughput.x < 0.0001)
+            {
+                result += 0.4f * sampleBackground(ray.dir);
+                break;
+            }
+            
+            // Move along current ray direction and check if ray is still in the cloud
             if(!integrateCloud(ray, transmittance))
             {  
-                result += sampleBackground(ray.dir);
+                result +=sampleBackground(ray.dir);
                 break;
             }
 
             // Sample pdf between ray and light directions
-            float pdf = evaluateSample(-ray.dir, -shadowVolumeProperties.lightDirection.xyz);
+            lightRay.pos = ray.pos ;
+            //lightRay.dir = -shadowVolumeProperties.lightDirection.xyz;
+            lightRay.dir = normalize(-shadowVolumeProperties.lightDirection.xyz + vec3(generateRandomNumber() * .5f - .25f, generateRandomNumber() * .5f - .25f, generateRandomNumber() * .5f - .25f));
+            pdf = samplePhase(ray.dir, lightRay.dir);
 
-            //vec4 accumulatedDensity = sampleShadowVolume(ray.pos);
-            vec4 accumulatedDensity = vec4(.1f);
-            Ray exitRay = {ray.pos, shadowVolumeProperties.lightDirection.xyz};
-            vec3 lightExit;
-            leaveCloud(exitRay, lightExit);
+            accumulatedDensity = sampleShadowVolume(lightRay.pos);
+            leaveCloud(lightRay, lightRay.pos);
             
-            result += 1.f * pdf * throughput * exp( -accumulatedDensity * distance(lightExit, ray.pos));
+            result += SUNLIGHT_COLOR * pdf * throughput * exp( -accumulatedDensity * distance(lightRay.pos, ray.pos));
             throughput *= transmittance;
 
-            generateSample(currentRay.dir, ray.dir);
+            scatterRay(currentRay.dir, ray.dir);
 
             currentRay = ray;
             

@@ -21,7 +21,7 @@ void tests::RunTests()
 	intersectCloud(cloudProperties, rayDir, rayPos, intersectionPoint);
 
 	ShadowVolumeProperties shadowVolumeProperties;
-	shadowVolumeProperties.SetLightDirection(glm::vec3(0, -1, 0));
+	shadowVolumeProperties.SetLightDirection(glm::vec3(0, 0, 1));
 	shadowVolumeProperties.SetOrigin(cloudProperties.bounds[0], cloudProperties.bounds[1]);
 
 	shadowVolumeTest(glm::ivec2(shadowVolumeProperties.voxelAxisCount) / 2, shadowVolumeProperties, cloudProperties);
@@ -123,5 +123,5 @@ glm::vec3 tests::calculateVoxelPosition(glm::uvec3 voxelIdx, ShadowVolumePropert
 	return (shadowVolumeProperties.bounds[0] +
 		voxelIdx.x * shadowVolumeProperties.voxelSize * shadowVolumeProperties.right +
 		voxelIdx.y * shadowVolumeProperties.voxelSize * shadowVolumeProperties.up +
-		voxelIdx.z * shadowVolumeProperties.voxelSize * -shadowVolumeProperties.lightDirection);
+		voxelIdx.z * shadowVolumeProperties.voxelSize * shadowVolumeProperties.lightDirection);
 }

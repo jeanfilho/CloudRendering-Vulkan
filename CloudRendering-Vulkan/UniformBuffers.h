@@ -72,11 +72,11 @@ public:
 		newDir = glm::normalize(newDir);
 		if (newDir.y > .95f)
 		{
-			newDir = glm::vec3(0,1,0);
-			newRight = glm::vec3(1,0,0);
-			newUp = glm::vec3(0,0,-1);
+			newDir = glm::vec3(0, 1, 0);
+			newRight = glm::vec3(1, 0, 0);
+			newUp = glm::vec3(0, 0, -1);
 		}
-		else if(newDir.y < -.95f)
+		else if (newDir.y < -.95f)
 		{
 			newDir = glm::vec3(0, -1, 0);
 			newRight = glm::vec3(1, 0, 0);
@@ -84,8 +84,8 @@ public:
 		}
 		else
 		{
-			newRight = glm::normalize(glm::cross(newDir, glm::vec3(0, 1, 0)));
-			newUp = glm::normalize(glm::cross(newRight, newDir));
+			newRight = glm::normalize(glm::cross(glm::vec3(0, 1, 0), newDir));
+			newUp = glm::normalize(glm::cross(newDir, newRight));
 		}
 
 		lightDirection = glm::vec4(newDir.x, newDir.y, newDir.z, 0);
@@ -106,7 +106,7 @@ public:
 private:
 	void UpdateOrigin(float radius, glm::vec3 center)
 	{
-		glm::vec4 cornerPos = radius * (lightDirection - right - up);
+		glm::vec4 cornerPos = radius * (-lightDirection - right - up);
 		bounds[0] = cornerPos + glm::vec4(center, 0);
 		bounds[1] = -cornerPos + glm::vec4(center, 0);
 	}
