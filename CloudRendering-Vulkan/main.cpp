@@ -619,7 +619,7 @@ void DrawFrame()
 
 	// Acquire image from swapchain
 	uint32_t imageIndex;
-	vkAcquireNextImageKHR(device->GetDevice(), swapchain->GetSwapchain(), UINT64_MAX, imageAvailableSemaphores[currentFrame].GetSemaphore(), VK_NULL_HANDLE, &imageIndex);
+	ValidCheck(vkAcquireNextImageKHR(device->GetDevice(), swapchain->GetSwapchain(), UINT64_MAX, imageAvailableSemaphores[currentFrame].GetSemaphore(), VK_NULL_HANDLE, &imageIndex));
 
 	// Check if a previous frame is using this image (i.e. there is its fence to wait on)
 	if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
@@ -694,9 +694,12 @@ void RenderLoop()
 		}
 
 		pushConstants.seed = std::rand();
-		DrawFrame();
-		pushConstants.frameCount++;
-		framesInSecond++;
+		if (!glfwGetWindowAttrib(window, GLFW_ICONIFIED))
+		{
+			DrawFrame();
+			pushConstants.frameCount++;
+			framesInSecond++;
+		}
 	}
 	std::cout << "Render Loop stopped" << std::endl;
 	vkDeviceWaitIdle(device->GetDevice());
@@ -771,9 +774,7 @@ int main()
 
 	std::cout << "OK" << std::endl;
 
-	parameters.maxRayBounces = 7;
 	parameters.SetPhaseG(0);
-
 	cameraProperties.position = glm::vec3(0, 0, -500);
 
 

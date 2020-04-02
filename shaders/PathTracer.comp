@@ -205,6 +205,39 @@ void leaveCloud(in Ray ray, out vec3 intersectionPoint)
 	intersectionPoint = ray.pos + ray.dir * tmax;
 }
 
+void leaveShadowVolume(in Ray ray, out vec3 intersectionPoint)
+{
+    float tmin, tmax, tymin, tymax, tzmin, tzmax;
+    vec3 invdir = 1 / ray.dir;
+    int sign[3] = {isNegativeSign(invdir.x), isNegativeSign(invdir.y), isNegativeSign(invdir.z)};
+
+    intersectionPoint = vec3(FLT_MAX);
+ 
+    tmin = (cloudProperties.bounds[sign[0]].x - ray.pos.x) * invdir.x; 
+    tmax = (cloudProperties.bounds[1-sign[0]].x - ray.pos.x) * invdir.x; 
+    tymin = (cloudProperties.bounds[sign[1]].y - ray.pos.y) * invdir.y; 
+    tymax = (cloudProperties.bounds[1-sign[1]].y - ray.pos.y) * invdir.y; 
+ 
+    if ((tmin > tymax) || (tymin > tmax)) 
+        return; 
+    if (tymin > tmin) 
+        tmin = tymin; 
+    if (tymax < tmax) 
+        tmax = tymax; 
+ 
+    tzmin = (cloudProperties.bounds[sign[2]].z - ray.pos.z) * invdir.z; 
+    tzmax = (cloudProperties.bounds[1-sign[2]].z - ray.pos.z) * invdir.z; 
+ 
+    //if ((tmin > tzmax) || (tzmin > tmax)) 
+    //    return false; 
+    if (tzmin > tmin) 
+        tmin = tzmin; 
+    if (tzmax < tmax) 
+        tmax = tzmax;
+
+	intersectionPoint = ray.pos + ray.dir * tmax;
+}
+
 bool isInCloud(in vec3 point)
 {
     return !(point.x < cloudProperties.bounds[0].x || 
@@ -221,22 +254,13 @@ vec4 getCloudColorProperty(in vec3 pos)
     return vec4(1.0f);
 }
 
-// HenyeyGreenstein from PBRT book
-float phaseHG(float cosTheta, float g)
-{
-    float denom = 1 + g * g + 2 * g * cosTheta;
-    return INV_4Pi * (1 - g * g) / (denom * sqrt(denom));
-}
-
 // https://www.shadertoy.com/view/lldGRM
-void createOrthonormalBasis(in const vec3 dir, out vec3 t0, out vec3 t1)
+void createOrthonormalBasis(in const vec3 n, out vec3 xp, out vec3 yp)
 {
-    float a =  dir.y/(1.0+dir.z);
-    float b =  dir.y*a;
-    float c = -dir.x*a;
-    
-    t0 = vec3(dir.z+b, c, -dir.x);
-    t1 = vec3(c, 1.0-b, -dir.y);
+  float a = 1./(1. + n.z);
+  float b = -n.x*n.y*a;
+  xp = vec3(1. - n.x*n.x*a, b, -n.x);
+  yp = vec3(b, 1. - n.y*n.y*a , -n.y);
 }
 
 //---------------------------------------------------------
@@ -266,15 +290,24 @@ void initializeRandom(uint seed) {
 //---------------------------------------------------------
 // Phase BSDF - Henyey-Greenstein
 //---------------------------------------------------------
+float SphericalTheta(const vec3 v) {
+    return acos(clamp(v.z, -1, 1));
+}
+
+float SphericalPhi(const vec3 v) {
+    float p = atan(v.y, v.x) * 2;
+    return (p < 0) ? (p + 2 * PI) : p;
+}
+
 float calculatePDF(float costheta)
 {
-    return 0.25f * parameters.phaseOneMinusG2 / (PI * pow(parameters.phaseOnePlusG2 - 2.0f * parameters.phaseG * costheta, 1.5f));
+    return INV_4Pi * parameters.phaseOneMinusG2 / pow(parameters.phaseOnePlusG2 - 2.0f * parameters.phaseG * costheta, 1.5f);
 }
 // Assumes non-isotropic due to division by phaseG
 float invertCDF(float xi)
 {
-    float t = (parameters.phaseOneMinusG2) / (1.0f - parameters.phaseG + 2.0f * parameters.phaseG * xi);
-    return parameters.phaseOneOver2G * (parameters.phaseOnePlusG2 - t * t);
+    float sqrTerm  = (parameters.phaseOneMinusG2) / (1.0f - parameters.phaseG + 2.0f * parameters.phaseG * xi);
+    return parameters.phaseOneOver2G * (parameters.phaseOnePlusG2 - sqrTerm  * sqrTerm);
 }
 
 // Evaluate radiance
@@ -284,7 +317,7 @@ float samplePhase(in const vec3 incomingDirection, in const vec3 sampleDirection
 
     if(parameters.isotropic)
     {
-        pdf = 0.25f * PI;
+        pdf = INV_4Pi;
     }
     else
     {
@@ -298,8 +331,6 @@ float samplePhase(in const vec3 incomingDirection, in const vec3 sampleDirection
 // Scatter ray and evaluate radiance
 void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
 {
-    float pdf;
-
     if(parameters.isotropic)
     {
         float xi = generateRandomNumber();
@@ -322,24 +353,24 @@ void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
     {
         float phi = generateRandomNumber() * 2 * PI;
         float cosTheta = invertCDF(generateRandomNumber());
-        float sinTheta = sqrt(1.0f - cosTheta * cosTheta);
-        vec3 direction = -incomingDirection;
+        float sinTheta = sqrt(max(0, 1.0f - cosTheta * cosTheta));
         vec3 t0, t1;
 
-        createOrthonormalBasis(direction, t0, t1);
-        sampleDirection = sinTheta * sin(phi) * t0 + sinTheta * cos(phi) * t1 +
-                      cosTheta * direction;
+        createOrthonormalBasis(incomingDirection, t0, t1);
+        
+        sampleDirection =
+            sinTheta * sin(phi) * t0 +
+            sinTheta * cos(phi) * t1 +
+            cosTheta * incomingDirection;
     }
 }
 //---------------------------------------------------------
-// Cloud Integrator
+// Cloud Scatter
 //---------------------------------------------------------
 
-// Update ray position based on scattering, and output trasnmittance to light in the scattered point
+// Update ray position based on scattering
 // Returns wether ray is still in the cloud or not
-bool integrateCloud(
-    inout Ray ray,
-    out vec4 transmittance)
+bool findScatterPoint(inout Ray ray)
 {
     vec3 exitPoint;
     leaveCloud(ray, exitPoint);
@@ -347,11 +378,15 @@ bool integrateCloud(
     float dist = distance(ray.pos, exitPoint);
     bool terminated = false;
     float t = 0;
+    vec4 extinction;
+    vec3 currentPoint;
+    float zeta;
+    float xi;
 
     // Loop until not null scatter or cloud left
     do
     {
-        float zeta = generateRandomNumber();
+        zeta = generateRandomNumber();
         t = t + -log(1 - zeta) / cloudProperties.maxExtinction;
         if (t > dist)
         {
@@ -359,25 +394,20 @@ bool integrateCloud(
         }
 
         // Update the ray position
-        vec3 currentPoint = ray.pos + t * ray.dir;
+        currentPoint = ray.pos + t * ray.dir;
 
         // Recompute the local extinction after updating the shading context
-        vec4 extinction = sampleCloud(currentPoint);
-        //vec4 extinction = sampleShadowVolume(currentPoint);
-        
-        float xi = generateRandomNumber();
-        if (xi < (average(extinction) / cloudProperties.maxExtinction))
+        extinction = sampleCloud(currentPoint);
+        //extinction = sampleShadowVolume(currentPoint);
+        xi = generateRandomNumber();
+        if (xi < extinction.x / cloudProperties.maxExtinction)
         {
             terminated = true;
         }
     } while (!terminated);
 
     // Advance ray to new position
-    ray.pos = ray.pos + t * ray.dir;
-
-    // Calculate Transmittance
-    vec4 extinction = sampleCloud(ray.pos);
-    transmittance = vec4(exp(-dist * extinction));
+    ray.pos = currentPoint;
 
     return true;
 }
@@ -408,7 +438,6 @@ void main()
     {
         uint i = 0;
         vec4 radiance = vec4(0.0f);
-        vec4 transmittance = vec4(0.0f);
         vec4 throughput = vec4(1.0f);
         vec4 accumulatedDensity = vec4(0.0f);
         float pdf;
@@ -417,38 +446,29 @@ void main()
 
         // Path tracer loop
         while(true)
-        {
-            // No contribution anymore, add ambient light
-            if(throughput.x < 0.0001)
-            {
-                result += 0.4f * sampleBackground(ray.dir);
-                break;
-            }
-            
+        {            
             // Move along current ray direction and check if ray is still in the cloud
-            if(!integrateCloud(ray, transmittance))
+            if(!findScatterPoint(ray))
             {  
-                result +=sampleBackground(ray.dir);
+                result += sampleBackground(ray.dir);
                 break;
             }
 
             // Sample pdf between ray and light directions
             lightRay.pos = ray.pos ;
-            //lightRay.dir = -shadowVolumeProperties.lightDirection.xyz;
-            lightRay.dir = normalize(-shadowVolumeProperties.lightDirection.xyz + vec3(generateRandomNumber() * .5f - .25f, generateRandomNumber() * .5f - .25f, generateRandomNumber() * .5f - .25f));
+            lightRay.dir = -shadowVolumeProperties.lightDirection.xyz;
+            //lightRay.dir = normalize(-shadowVolumeProperties.lightDirection.xyz + vec3(generateRandomNumber() * .5f - .25f, generateRandomNumber() * .5f - .25f, generateRandomNumber() * .5f - .25f));
             pdf = samplePhase(ray.dir, lightRay.dir);
 
             accumulatedDensity = sampleShadowVolume(lightRay.pos);
-            leaveCloud(lightRay, lightRay.pos);
+            // leaveCloud(lightRay, lightRay.pos);
             
-            result += SUNLIGHT_COLOR * pdf * throughput * exp( -accumulatedDensity * distance(lightRay.pos, ray.pos));
-            throughput *= transmittance;
+            //result += SUNLIGHT_COLOR * .05f * pdf * exp( -distance(lightRay.pos, ray.pos) * accumulatedDensity);
+            result += SUNLIGHT_COLOR * pdf * accumulatedDensity;
 
             scatterRay(currentRay.dir, ray.dir);
 
             currentRay = ray;
-            
-            i++;
         }        
     }
 

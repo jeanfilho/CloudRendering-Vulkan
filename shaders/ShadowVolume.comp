@@ -1,6 +1,11 @@
 #version 450
 
 layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+
+
+const float FLT_MAX = 3.402823466e+38;
+const float FLT_MIN = 1.175494351e-38;
+
 //---------------------------------------------------------
 // Descriptor Set
 //---------------------------------------------------------
@@ -37,7 +42,7 @@ bool isInCloud(in vec3 point)
             point.z > cloudProperties.bounds[1].z );
 }
 
-vec4 sampleExtinction(in vec3 pos)
+vec4 sampleCloud(in vec3 pos)
 {
     vec3 normalizedIdx = ((vec4(pos,0) - cloudProperties.bounds[0])/(cloudProperties.bounds[1] - cloudProperties.bounds[0])).xyz;
     return texture(cloudSampler, normalizedIdx);
@@ -61,6 +66,45 @@ float average(in vec4 data)
     return accumulated/4.0f;
 }
 
+int isNegativeSign(in float value)
+{
+    return int(value < 0);
+}
+
+void leaveCloud(in vec3 rayDir, in vec3 rayPos, out vec3 intersectionPoint)
+{
+    float tmin, tmax, tymin, tymax, tzmin, tzmax;
+    vec3 invdir = 1 / rayDir;
+    int sign[3] = {isNegativeSign(invdir.x), isNegativeSign(invdir.y), isNegativeSign(invdir.z)};
+
+    intersectionPoint = vec3(FLT_MAX);
+ 
+    tmin = (cloudProperties.bounds[sign[0]].x - rayPos.x) * invdir.x; 
+    tmax = (cloudProperties.bounds[1-sign[0]].x - rayPos.x) * invdir.x; 
+    tymin = (cloudProperties.bounds[sign[1]].y - rayPos.y) * invdir.y; 
+    tymax = (cloudProperties.bounds[1-sign[1]].y - rayPos.y) * invdir.y; 
+ 
+    if ((tmin > tymax) || (tymin > tmax)) 
+        return; 
+    if (tymin > tmin) 
+        tmin = tymin; 
+    if (tymax < tmax) 
+        tmax = tymax; 
+ 
+    tzmin = (cloudProperties.bounds[sign[2]].z - rayPos.z) * invdir.z; 
+    tzmax = (cloudProperties.bounds[1-sign[2]].z - rayPos.z) * invdir.z; 
+ 
+    if ((tmin > tzmax) || (tzmin > tmax)) 
+        return; 
+    if (tzmin > tmin) 
+        tmin = tzmin; 
+    if (tzmax < tmax) 
+        tmax = tzmax;
+
+	intersectionPoint = rayPos + rayDir * tmax;
+}
+
+
 //---------------------------------------------------------
 //  Main
 //---------------------------------------------------------
@@ -71,36 +115,19 @@ void main()
     vec3 position = vec3(0.0f);
 
     bool firstHit = false;
-    uint sampleCount = 1;
     vec4 sampleValue = vec4(0.0f);
+    vec3 leavePoint = vec3(0);
+    vec3 lightDir = shadowVolumeProperties.lightDirection.xyz;
+    float accumulatedDistance = 0;
+
     for(uint z = 0; z < shadowVolumeProperties.voxelAxisCount; z++)
     {
         position = calculateVoxelPosition(uvec3(columnCoord, z));
         if(isInCloud(position))
         {
-            sampleValue = sampleExtinction(position);
-            if(!firstHit)
-            {
-                if(average(sampleValue) > 0.0001f)
-                {
-                    firstHit = true;
-                }
-            }
-            
-            if(firstHit)
-            {
-                accumulatedValue += sampleValue;
-	            imageStore(shadowVolume, ivec3(gl_GlobalInvocationID.xy, z), accumulatedValue / sampleCount);
-                sampleCount++;
-            }
-            else
-            {
-	            imageStore(shadowVolume, ivec3(gl_GlobalInvocationID.xy, z), vec4(0));
-            }
+            accumulatedValue += sampleCloud(position);
         }
-        else
-        {
-            imageStore(shadowVolume, ivec3(gl_GlobalInvocationID.xy, z), vec4(0));
-        }
+        accumulatedDistance += shadowVolumeProperties.voxelSize;
+        imageStore(shadowVolume, ivec3(gl_GlobalInvocationID.xy, z), exp( -accumulatedDistance * accumulatedValue / (z + 1)));
     }
 }
