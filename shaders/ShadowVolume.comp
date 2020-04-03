@@ -16,6 +16,7 @@ layout (binding = 1) uniform ShadowVolumeProperties
 	vec4 lightDirection;
     vec4 right;
     vec4 up;
+    mat4 basisChange;
     uint voxelAxisCount;
     float voxelSize;
 

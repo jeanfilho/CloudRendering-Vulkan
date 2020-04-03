@@ -61,8 +61,10 @@ private:
 	glm::vec4 up{ 0, 1, 0, 0 };
 
 public:
+	glm::mat4 basisChange{ lightDirection, right, up, glm::vec4(0)};
 	glm::uint voxelAxisCount = 500;
 	glm::float32 voxelSize = 1.0f;
+
 
 public:
 	void SetLightDirection(glm::vec3 newDir)
@@ -91,6 +93,8 @@ public:
 		lightDirection = glm::vec4(newDir.x, newDir.y, newDir.z, 0);
 		right = glm::vec4(newRight.x, newRight.y, newRight.z, 0);
 		up = glm::vec4(newUp.x, newUp.y, newUp.z, 0);
+
+		basisChange = { right, up, lightDirection, glm::vec4(0) };
 
 		UpdateOrigin(glm::distance(bounds[0], bounds[1]) / 2.f, (bounds[0] - bounds[1]) / 2.f);
 	}

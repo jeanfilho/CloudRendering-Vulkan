@@ -74,7 +74,7 @@ const int MAX_FRAMES_IN_FLIGHT = 1;
 double previousTime = 0;
 unsigned int framesInSecond = 0;
 
-glm::vec3 lightDirection = { 0, 0, 1 };
+glm::vec3 lightDirection = { 0, -1, 0 };
 
 bool isShadowVolumeDirty = true;
 bool exitProgram = false;

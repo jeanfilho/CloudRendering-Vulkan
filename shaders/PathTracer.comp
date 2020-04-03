@@ -67,6 +67,7 @@ layout (binding = 6) uniform ShadowVolumeProperties
 	vec4 lightDirection;
     vec4 right;
     vec4 up;
+    mat4 basisChange;
     uint voxelAxisCount;
     float voxelSize;
 
@@ -96,7 +97,7 @@ vec4 sampleCloud(in vec3 pos)
 
 vec4 sampleShadowVolume(in vec3 pos)
 {
-    vec3 normalizedIdx = ((vec4(pos,0) - shadowVolumeProperties.bounds[0])/(shadowVolumeProperties.bounds[1] - shadowVolumeProperties.bounds[0])).xyz;
+    vec3 normalizedIdx = (shadowVolumeProperties.basisChange *(vec4(pos,0) - shadowVolumeProperties.bounds[0])/(shadowVolumeProperties.basisChange *(shadowVolumeProperties.bounds[1] - shadowVolumeProperties.bounds[0]))).xyz;
     return vec4(texture(shadowSampler, normalizedIdx).x);
 }
 
@@ -173,39 +174,6 @@ bool intersectCloud(in Ray ray, out vec3 intersectionPoint)
 }
 
 void leaveCloud(in Ray ray, out vec3 intersectionPoint)
-{
-    float tmin, tmax, tymin, tymax, tzmin, tzmax;
-    vec3 invdir = 1 / ray.dir;
-    int sign[3] = {isNegativeSign(invdir.x), isNegativeSign(invdir.y), isNegativeSign(invdir.z)};
-
-    intersectionPoint = vec3(FLT_MAX);
- 
-    tmin = (cloudProperties.bounds[sign[0]].x - ray.pos.x) * invdir.x; 
-    tmax = (cloudProperties.bounds[1-sign[0]].x - ray.pos.x) * invdir.x; 
-    tymin = (cloudProperties.bounds[sign[1]].y - ray.pos.y) * invdir.y; 
-    tymax = (cloudProperties.bounds[1-sign[1]].y - ray.pos.y) * invdir.y; 
- 
-    if ((tmin > tymax) || (tymin > tmax)) 
-        return; 
-    if (tymin > tmin) 
-        tmin = tymin; 
-    if (tymax < tmax) 
-        tmax = tymax; 
- 
-    tzmin = (cloudProperties.bounds[sign[2]].z - ray.pos.z) * invdir.z; 
-    tzmax = (cloudProperties.bounds[1-sign[2]].z - ray.pos.z) * invdir.z; 
- 
-    //if ((tmin > tzmax) || (tzmin > tmax)) 
-    //    return false; 
-    if (tzmin > tmin) 
-        tmin = tzmin; 
-    if (tzmax < tmax) 
-        tmax = tzmax;
-
-	intersectionPoint = ray.pos + ray.dir * tmax;
-}
-
-void leaveShadowVolume(in Ray ray, out vec3 intersectionPoint)
 {
     float tmin, tmax, tymin, tymax, tzmin, tzmax;
     vec3 invdir = 1 / ray.dir;
@@ -321,7 +289,7 @@ float samplePhase(in const vec3 incomingDirection, in const vec3 sampleDirection
     }
     else
     {
-        float cosTheta = dot(-incomingDirection, sampleDirection);
+        float cosTheta = dot(incomingDirection, sampleDirection);
         pdf = calculatePDF(cosTheta);
     }
 
@@ -398,7 +366,6 @@ bool findScatterPoint(inout Ray ray)
 
         // Recompute the local extinction after updating the shading context
         extinction = sampleCloud(currentPoint);
-        //extinction = sampleShadowVolume(currentPoint);
         xi = generateRandomNumber();
         if (xi < extinction.x / cloudProperties.maxExtinction)
         {
@@ -456,15 +423,12 @@ void main()
 
             // Sample pdf between ray and light directions
             lightRay.pos = ray.pos ;
-            lightRay.dir = -shadowVolumeProperties.lightDirection.xyz;
-            //lightRay.dir = normalize(-shadowVolumeProperties.lightDirection.xyz + vec3(generateRandomNumber() * .5f - .25f, generateRandomNumber() * .5f - .25f, generateRandomNumber() * .5f - .25f));
+            lightRay.dir = -shadowVolumeProperties.lightDirection.xyz;            
             pdf = samplePhase(ray.dir, lightRay.dir);
 
+            // Sample shadow volume and add direct light
             accumulatedDensity = sampleShadowVolume(lightRay.pos);
-            // leaveCloud(lightRay, lightRay.pos);
-            
-            //result += SUNLIGHT_COLOR * .05f * pdf * exp( -distance(lightRay.pos, ray.pos) * accumulatedDensity);
-            result += SUNLIGHT_COLOR * pdf * accumulatedDensity;
+            result += SUNLIGHT_COLOR * 5 * pdf * accumulatedDensity;
 
             scatterRay(currentRay.dir, ray.dir);
 
