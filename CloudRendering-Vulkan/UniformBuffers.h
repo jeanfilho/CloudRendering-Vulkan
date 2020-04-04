@@ -21,12 +21,15 @@ struct CloudProperties
 	glm::vec4 bounds[2]{ glm::uvec4(0) ,glm::uvec4(0) };
 	glm::uvec4 voxelCount = glm::uvec4(0);
 	float maxExtinction = 0.2f;
+	float baseScaling = 1000.f;
+	float densityScaling = 1.f;
 };
 
 struct Parameters
 {
 public:
 	unsigned int maxRayBounces = 5;
+	float lightIntensity = 1;
 private:
 	float phaseG = 0.67f; // [-1, 1]
 	float phaseOnePlusG2 = 1.0f + phaseG * phaseG;
@@ -70,31 +73,19 @@ public:
 	void SetLightDirection(glm::vec3 newDir)
 	{
 		glm::vec3 newRight, newUp;
-
 		newDir = glm::normalize(newDir);
-		if (newDir.y > .95f)
-		{
-			newDir = glm::vec3(0, 1, 0);
-			newRight = glm::vec3(1, 0, 0);
-			newUp = glm::vec3(0, 0, -1);
-		}
-		else if (newDir.y < -.95f)
-		{
-			newDir = glm::vec3(0, -1, 0);
-			newRight = glm::vec3(1, 0, 0);
-			newUp = glm::vec3(0, 0, 1);
-		}
-		else
-		{
-			newRight = glm::normalize(glm::cross(glm::vec3(0, 1, 0), newDir));
-			newUp = glm::normalize(glm::cross(newDir, newRight));
-		}
+
+		float sz = newDir.z >= 0.0f ? 1.0f : -1.0f;
+		float a = newDir.y / (1.0f + abs(newDir.z));
+		float b = newDir.y * a;
+		float c = -newDir.x * a;
+
+		newRight = glm::vec3(newDir.z + sz * b, sz * c, -newDir.x);
+		newUp = glm::vec3(c, 1.0f - b, -sz * newDir.y);
 
 		lightDirection = glm::vec4(newDir.x, newDir.y, newDir.z, 0);
 		right = glm::vec4(newRight.x, newRight.y, newRight.z, 0);
 		up = glm::vec4(newUp.x, newUp.y, newUp.z, 0);
-
-		basisChange = { right, up, lightDirection, glm::vec4(0) };
 
 		UpdateOrigin(glm::distance(bounds[0], bounds[1]) / 2.f, (bounds[0] - bounds[1]) / 2.f);
 	}
@@ -111,7 +102,9 @@ private:
 	void UpdateOrigin(float radius, glm::vec3 center)
 	{
 		glm::vec4 cornerPos = radius * (-lightDirection - right - up);
-		bounds[0] = cornerPos + glm::vec4(center, 0);
-		bounds[1] = -cornerPos + glm::vec4(center, 0);
+		bounds[0] = glm::vec4(center, 1) + cornerPos;
+		bounds[1] = glm::vec4(center, 1) - cornerPos;
+
+		basisChange = glm::inverse(glm::mat4{ right, up, lightDirection, glm::vec4(0,0,0,1) });
 	}
 };

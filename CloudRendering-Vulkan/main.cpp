@@ -74,7 +74,7 @@ const int MAX_FRAMES_IN_FLIGHT = 1;
 double previousTime = 0;
 unsigned int framesInSecond = 0;
 
-glm::vec3 lightDirection = { 0, -1, 0 };
+glm::vec3 lightDirection;
 
 bool isShadowVolumeDirty = true;
 bool exitProgram = false;
@@ -757,10 +757,12 @@ int main()
 	//	0, 0, 0, 0 };
 	//cloudData->Copy(testData.data(), testData.size() * sizeof(float));
 
+	cloudProperties.baseScaling = 1000;
+	cloudProperties.densityScaling = 200;
 	glm::vec3 cloudSize{
-		cloudData->GetVoxelSize().x * cloudData->GetVoxelCount().x * 1000,
-		cloudData->GetVoxelSize().y * cloudData->GetVoxelCount().y * 1000,
-		cloudData->GetVoxelSize().z * cloudData->GetVoxelCount().z * 1000 };
+		cloudData->GetVoxelSize().x * cloudData->GetVoxelCount().x * cloudProperties.baseScaling,
+		cloudData->GetVoxelSize().y * cloudData->GetVoxelCount().y * cloudProperties.baseScaling,
+		cloudData->GetVoxelSize().z * cloudData->GetVoxelCount().z * cloudProperties.baseScaling };
 
 	cloudProperties.maxExtinction = cloudData->GetMajorant();
 	cloudProperties.voxelCount = glm::uvec4(cloudData->GetVoxelCount(), 0);
@@ -775,8 +777,13 @@ int main()
 	std::cout << "OK" << std::endl;
 
 	parameters.SetPhaseG(0);
-	cameraProperties.position = glm::vec3(0, 0, -500);
+	parameters.lightIntensity = 2;
 
+	cameraProperties.position = glm::vec3(0, 50, -500);
+
+	lightDirection = glm::vec3(1, -1, 0);
+	//lightDirection = glm::vec3(0.328f, -1, 0);
+	//lightDirection = glm::vec3(0, -1, 0);
 
 	// Initialize GLFW
 	if (!InitializeWindow())
