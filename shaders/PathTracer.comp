@@ -225,10 +225,13 @@ vec4 getCloudColorProperty(in vec3 pos)
 // https://www.shadertoy.com/view/lldGRM
 void createOrthonormalBasis(in const vec3 n, out vec3 xp, out vec3 yp)
 {
-  float a = 1./(1. + n.z);
-  float b = -n.x*n.y*a;
-  xp = vec3(1. - n.x*n.x*a, b, -n.x);
-  yp = vec3(b, 1. - n.y*n.y*a , -n.y);
+  float sz = n.z >= 0.0 ? 1.0 : -1.0;
+  float a  =  n.y/(1.0+abs(n.z));
+  float b  =  n.y*a;
+  float c  = -n.x*a;
+    
+  xp = vec3(n.z+sz*b, sz*c, -n.x);
+  yp = vec3(c, 1.0-b, -sz*n.y);
 }
 
 //---------------------------------------------------------
@@ -255,9 +258,6 @@ void initializeRandom(uint seed) {
 	 	generateRandomNumber();
 }
 
-//---------------------------------------------------------
-// Phase BSDF - Henyey-Greenstein
-//---------------------------------------------------------
 float SphericalTheta(const vec3 v) {
     return acos(clamp(v.z, -1, 1));
 }
@@ -266,6 +266,10 @@ float SphericalPhi(const vec3 v) {
     float p = atan(v.y, v.x) * 2;
     return (p < 0) ? (p + 2 * PI) : p;
 }
+
+//---------------------------------------------------------
+// Phase BSDF - Henyey-Greenstein
+//---------------------------------------------------------
 
 float calculatePDF(float costheta)
 {
@@ -306,7 +310,7 @@ void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
         float sinTheta = 1.0 - sampleDirection.z * sampleDirection.z; // actually square of sinTheta
         if (sinTheta > 0.0)
         {
-            sinTheta = sqrt(sinTheta);
+            sinTheta = sqrt(max(0,sinTheta));
             xi = generateRandomNumber();
             float phi = xi * 2.0 * PI;
             sampleDirection.x = sinTheta * cos(phi);
@@ -327,8 +331,8 @@ void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
         createOrthonormalBasis(incomingDirection, t0, t1);
         
         sampleDirection =
-            sinTheta * sin(phi) * t0 +
-            sinTheta * cos(phi) * t1 +
+            sinTheta * cos(phi) * t0 +
+            sinTheta * sin(phi) * t1 +
             cosTheta * incomingDirection;
     }
 }
@@ -344,7 +348,6 @@ bool findScatterPoint(inout Ray ray)
     leaveCloud(ray, exitPoint);
 
     float dist = distance(ray.pos, exitPoint);
-    bool terminated = false;
     float t = 0;
     vec4 extinction;
     vec3 currentPoint;
@@ -369,9 +372,9 @@ bool findScatterPoint(inout Ray ray)
         xi = generateRandomNumber();
         if (xi < extinction.x / cloudProperties.maxExtinction)
         {
-            terminated = true;
+            break;
         }
-    } while (!terminated);
+    } while (true);
 
     // Advance ray to new position
     ray.pos = currentPoint;
@@ -388,7 +391,6 @@ void main()
 
     Ray ray;    
     vec4 result = vec4(0.0f);
-    vec4 throughput = vec4(1.0f);
     ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
 
     // imageStore(resultImage, pixelCoord, vec4(generateRandomNumber()));
@@ -397,27 +399,27 @@ void main()
     // Get ray direction and volume entry point
     getCameraRay(pixelCoord, ray);
     vec3 rayPos = ray.pos;
-    if(!intersectCloud(ray, ray.pos) || isInCloud(rayPos))
+    if(!intersectCloud(ray, ray.pos))
     {
         result = sampleBackground(ray.dir);        
     }
     else
     {
-        uint i = 0;
-        vec4 radiance = vec4(0.0f);
-        vec4 throughput = vec4(1.0f);
         vec4 accumulatedDensity = vec4(0.0f);
         float pdf;
         Ray lightRay;
         Ray currentRay = ray;
 
         // Path tracer loop
+        uint i = 0;
         while(true)
-        {            
+        {
+            i++;
+
             // Move along current ray direction and check if ray is still in the cloud
             if(!findScatterPoint(ray))
             {  
-                result += sampleBackground(ray.dir);
+                result += sampleBackground(ray.dir);    
                 break;
             }
 
