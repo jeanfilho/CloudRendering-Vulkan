@@ -11,6 +11,11 @@
 #include <ctime>
 #include <thread>
 
+
+#include "imgui/imgui.h"
+#include "imgui/examples/imgui_impl_glfw.h"
+#include "imgui/examples/imgui_impl_vulkan.h"
+
 #define NOMINMAX // disable windows min and max functions
 #define GLFW_INCLUDE_VULKAN
 #define VK_USE_PLATFORM_WIN32_KHR
