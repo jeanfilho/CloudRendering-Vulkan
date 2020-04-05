@@ -1,3 +1,3 @@
 #pragma once
 
-bool ValidCheck(const VkResult& result);
+void ValidCheck(VkResult result);

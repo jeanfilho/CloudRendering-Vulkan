@@ -4,10 +4,32 @@
 #include "VulkanSwapchain.h"
 #include "VulkanDevice.h"
 
+VulkanRenderPass::VulkanRenderPass()
+{
+}
+
 VulkanRenderPass::VulkanRenderPass(VulkanDevice* device, VulkanSwapchain* swapchain)
 {
 	m_device = device;
 
+	AllocateResources(swapchain);
+}
+
+VulkanRenderPass::~VulkanRenderPass()
+{
+	if (m_renderPass != VK_NULL_HANDLE)
+	{
+		vkDestroyRenderPass(m_device->GetDevice(), m_renderPass, nullptr);
+	}
+}
+
+VkRenderPass VulkanRenderPass::GetRenderPass()
+{
+	return m_renderPass;
+}
+
+void VulkanRenderPass::AllocateResources(VulkanSwapchain* swapchain)
+{
 	//TODO: abstract this aways if possible
 	VkAttachmentDescription colorAttachment = {};
 	colorAttachment.format = swapchain->GetImageFormat();
@@ -47,17 +69,4 @@ VulkanRenderPass::VulkanRenderPass(VulkanDevice* device, VulkanSwapchain* swapch
 	renderPassInfo.pDependencies = &dependency;
 
 	ValidCheck(vkCreateRenderPass(m_device->GetDevice(), &renderPassInfo, nullptr, &m_renderPass));
-}
-
-VulkanRenderPass::~VulkanRenderPass()
-{
-	if (m_renderPass != VK_NULL_HANDLE)
-	{
-		vkDestroyRenderPass(m_device->GetDevice(), m_renderPass, nullptr);
-	}
-}
-
-VkRenderPass VulkanRenderPass::GetRenderPass()
-{
-	return m_renderPass;
 }

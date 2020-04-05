@@ -42,7 +42,7 @@ namespace initializers
 
 	VkPipelineShaderStageCreateInfo PipelineShaderStageCreateInfo(VkShaderModule module, VkShaderStageFlagBits stage);
 
-	VkFramebufferCreateInfo FramebufferCreateInfo(VkRenderPass renderPass, VkImageView* attachments, VkExtent2D& swapchainExtent);
+	VkFramebufferCreateInfo FramebufferCreateInfo(VkRenderPass renderPass, std::vector<VkImageView>& attachments, VkExtent2D& swapchainExtent);
 
 	VkDescriptorSetLayoutCreateInfo DescriptorSetLayoutCreateInfo(std::vector<VkDescriptorSetLayoutBinding>& bindings);
 

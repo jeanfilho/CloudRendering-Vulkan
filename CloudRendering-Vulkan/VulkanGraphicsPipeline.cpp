@@ -12,9 +12,18 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(VulkanDevice* device, VulkanSwapc
 	m_device = device;
 
 	// Position 0 is hardcoded for vertex, position 1 is hard coded for fragment
-	VkPipelineShaderStageCreateInfo vertShaderStageInfo = initializers::PipelineShaderStageCreateInfo(shaderModules[0]->GetShaderModule(), VK_SHADER_STAGE_VERTEX_BIT);
-	VkPipelineShaderStageCreateInfo fragShaderStageInfo = initializers::PipelineShaderStageCreateInfo(shaderModules[1]->GetShaderModule(), VK_SHADER_STAGE_FRAGMENT_BIT);
-	VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+	VkPipelineShaderStageCreateInfo vertShaderStageInfo;
+	VkPipelineShaderStageCreateInfo fragShaderStageInfo;
+	VkPipelineShaderStageCreateInfo shaderStages[2];
+	bool hasShaders = shaderModules.size() > 0;
+
+	if (hasShaders)
+	{
+		vertShaderStageInfo = initializers::PipelineShaderStageCreateInfo(shaderModules[0]->GetShaderModule(), VK_SHADER_STAGE_VERTEX_BIT);
+		fragShaderStageInfo = initializers::PipelineShaderStageCreateInfo(shaderModules[1]->GetShaderModule(), VK_SHADER_STAGE_FRAGMENT_BIT);
+		shaderStages[0] = vertShaderStageInfo;
+		shaderStages[1] = fragShaderStageInfo;
+	}
 
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 	vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -98,8 +107,8 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(VulkanDevice* device, VulkanSwapc
 
 	VkGraphicsPipelineCreateInfo pipelineInfo = {};
 	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipelineInfo.stageCount = 2;
-	pipelineInfo.pStages = shaderStages;
+	pipelineInfo.stageCount = static_cast<uint32_t>(shaderModules.size());
+	pipelineInfo.pStages = hasShaders ? shaderStages : nullptr;
 
 	pipelineInfo.pVertexInputState = &vertexInputInfo;
 	pipelineInfo.pInputAssemblyState = &inputAssembly;

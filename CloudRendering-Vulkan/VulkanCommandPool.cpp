@@ -22,6 +22,8 @@ VulkanCommandPool::~VulkanCommandPool()
 
 std::vector<VkCommandBuffer>& VulkanCommandPool::AllocateCommandBuffers(size_t size)
 {
+	vkResetCommandPool(m_device->GetDevice(), m_commandPool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+
 	m_commandBuffers.resize(size);
 
 	VkCommandBufferAllocateInfo allocInfo = initializers::CommandBufferAllocateInfo(m_commandPool, static_cast<uint32_t>(m_commandBuffers.size()));

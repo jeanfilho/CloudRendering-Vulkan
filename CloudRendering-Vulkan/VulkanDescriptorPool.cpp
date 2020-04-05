@@ -3,7 +3,7 @@
 
 #include "VulkanDevice.h"
 
-VulkanDescriptorPool::VulkanDescriptorPool(VulkanDevice* device, std::vector<VkDescriptorPoolSize>& poolSizes, uint32_t maxSets)
+VulkanDescriptorPool::VulkanDescriptorPool(VulkanDevice* device, std::vector<VkDescriptorPoolSize>& poolSizes, uint32_t maxSets /* = UINT32_MAX*/)
 {
 	m_device = device;
 
@@ -36,10 +36,18 @@ void VulkanDescriptorPool::AllocateSets(std::vector<VkDescriptorSetLayout>& setL
 
 void VulkanDescriptorPool::Clear()
 {
-	vkFreeDescriptorSets(m_device->GetDevice(), m_pool, static_cast<uint32_t>(m_sets.size()), m_sets.data());
+	if (!m_sets.empty())
+	{
+		vkFreeDescriptorSets(m_device->GetDevice(), m_pool, static_cast<uint32_t>(m_sets.size()), m_sets.data());
+	}
 }
 
 std::vector<VkDescriptorSet>& VulkanDescriptorPool::GetDescriptorSets()
 {
 	return m_sets;
+}
+
+VkDescriptorPool VulkanDescriptorPool::GetDescriptorPool()
+{
+	return m_pool;
 }

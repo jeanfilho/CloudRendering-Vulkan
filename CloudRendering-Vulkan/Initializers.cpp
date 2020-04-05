@@ -208,13 +208,13 @@ VkPipelineShaderStageCreateInfo initializers::PipelineShaderStageCreateInfo(VkSh
 	return info;
 }
 
-VkFramebufferCreateInfo initializers::FramebufferCreateInfo(VkRenderPass renderPass, VkImageView* attachments, VkExtent2D& swapchainExtent)
+VkFramebufferCreateInfo initializers::FramebufferCreateInfo(VkRenderPass renderPass, std::vector<VkImageView>& attachments, VkExtent2D& swapchainExtent)
 {
 	VkFramebufferCreateInfo info{};
 	info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 	info.renderPass = renderPass;
-	info.attachmentCount = 1;
-	info.pAttachments = attachments;
+	info.attachmentCount = static_cast<uint32_t>(attachments.size());
+	info.pAttachments = attachments.data();
 	info.width = swapchainExtent.width;
 	info.height = swapchainExtent.height;
 	info.layers = 1;

@@ -11,15 +11,16 @@
 #include "VulkanSampler.h"
 #include "VulkanShaderModule.h"
 #include "VulkanPipelineLayout.h"
-#include "VulkanRenderPass.h"
 #include "VulkanGraphicsPipeline.h"
-#include "VulkanFrameBuffer.h"
+#include "VulkanImGUIRenderPass.h"
+#include "VulkanFramebuffer.h"
 #include "VulkanCommandPool.h"
 #include "VulkanSemaphore.h"
 #include "VulkanFence.h"
 #include "VulkanComputePipeline.h"
 #include "VulkanDescriptorSetLayout.h"
 #include "VulkanDescriptorPool.h"
+
 
 #include "Grid3D.h"
 #include "Tests.h"
@@ -36,12 +37,15 @@ VulkanSurface* g_surface;
 VulkanSwapchain* g_swapchain;
 std::vector<VulkanImageView> g_swapchainImageViews;
 
+VulkanCommandPool* g_graphicsCommandPool;
+std::vector<VulkanFramebuffer*> g_framebuffers;
+
 VulkanCommandPool* g_computeCommandPool;
 VulkanDescriptorPool* g_computeDescriptorPool;
 
 VulkanPipelineLayout* g_pathTracerPipelineLayout;
 VulkanComputePipeline* g_pathTracerPipeline;
-VulkanDescriptorSetLayout* g_pathTracerDescriptorSetLayout;	// compute bindings layout
+VulkanDescriptorSetLayout* g_pathTracerDescriptorSetLayout;		// compute bindings layout
 std::vector<VkDescriptorSet> g_pathTracerDescriptorSets;		// compute bindings
 VulkanShaderModule* g_pathTracerShader;
 VulkanImage* g_pathTracerImage;
@@ -61,7 +65,7 @@ VulkanImage* g_shadowVolumeImage;
 VulkanImageView* g_shadowVolumeImageView;
 VulkanSampler* g_shadowVolumeSampler;
 
-ImGUILayer* g_imguiLayer;
+ImGUILayer* g_imguiLayer = nullptr;
 
 std::vector<VulkanSemaphore> g_imageAvailableSemaphores;
 std::vector<VulkanSemaphore> g_renderFinishedSemaphores;
@@ -136,6 +140,11 @@ std::vector<char> ReadFile(const std::string& filename)
 	file.close();
 
 	return buffer;
+}
+
+void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
+{
+	std::cout << "Button pressed";
 }
 
 VkCommandBuffer BeginSingleTimeCommands()
@@ -224,11 +233,11 @@ void RecordShadowVolumeUpdateCommands(VkCommandBuffer& commandBuffer)
 	CmdTransitionImageLayout(commandBuffer, g_shadowVolumeImage->GetImage(), g_shadowVolumeImage->GetFormat(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
-void RecordFrameCommands(uint32_t imageIndex)
+void RecordComputeCommands(uint32_t imageIndex)
 {
 	VkCommandBuffer& commandBuffer = g_computeCommandPool->GetCommandBuffers()[g_currentFrame];
 	VkImage swapchainImage = g_swapchain->GetSwapchainImages()[imageIndex];
-	VkImage computeImage = g_pathTracerImage->GetImage();
+	VkImage pathTracerImage = g_pathTracerImage->GetImage();
 
 	// Clear existing commands
 	vkResetCommandBuffer(commandBuffer, 0);
@@ -237,7 +246,7 @@ void RecordFrameCommands(uint32_t imageIndex)
 	vkBeginCommandBuffer(commandBuffer, &initializers::CommandBufferBeginInfo());
 
 	// Change Result Image Layout to writeable
-	CmdTransitionImageLayout(commandBuffer, computeImage, g_pathTracerImage->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+	CmdTransitionImageLayout(commandBuffer, pathTracerImage, g_pathTracerImage->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
 	// Bind compute pipeline
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, g_pathTracerPipeline->GetPipeline());
@@ -252,10 +261,10 @@ void RecordFrameCommands(uint32_t imageIndex)
 	vkCmdDispatch(commandBuffer, g_cameraProperties.width, g_cameraProperties.height, 1);
 
 	// Change swapchain image layout to dst blit
-	CmdTransitionImageLayout(commandBuffer, swapchainImage, g_pathTracerImage->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	CmdTransitionImageLayout(commandBuffer, swapchainImage, g_swapchain->GetImageFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
 	// Change result image layout to scr blit
-	CmdTransitionImageLayout(commandBuffer, computeImage, g_pathTracerImage->GetFormat(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	CmdTransitionImageLayout(commandBuffer, pathTracerImage, g_pathTracerImage->GetFormat(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
 	// Copy result to swapchain image
 	VkImageSubresourceLayers layers{};
@@ -272,13 +281,42 @@ void RecordFrameCommands(uint32_t imageIndex)
 	blit.dstOffsets[1] = { g_cameraProperties.width, g_cameraProperties.height, 1 };
 	blit.dstSubresource = layers;
 
-	vkCmdBlitImage(commandBuffer, computeImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+	vkCmdBlitImage(commandBuffer, pathTracerImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
 
 	// Change swapchain image layout back to present
-	CmdTransitionImageLayout(commandBuffer, swapchainImage, g_pathTracerImage->GetFormat(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+	CmdTransitionImageLayout(commandBuffer, swapchainImage, g_swapchain->GetImageFormat(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
 	// End recording
 	vkEndCommandBuffer(commandBuffer);
+}
+
+void RecordImGUICommands(uint32_t imageIndex)
+{
+	VkCommandBuffer commandBuffer = g_graphicsCommandPool->GetCommandBuffers()[g_currentFrame];
+	VkImage swapchainImage = g_swapchain->GetSwapchainImages()[imageIndex];
+
+	vkResetCommandBuffer(commandBuffer, 0);
+	vkBeginCommandBuffer(commandBuffer, &initializers::CommandBufferBeginInfo());
+
+	VkClearValue clearValue{};
+	clearValue.color = VkClearColorValue();
+	clearValue.depthStencil = VkClearDepthStencilValue();
+
+	VkRenderPassBeginInfo info = {};
+	info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	info.renderPass = g_imguiLayer->GetRenderPass()->GetRenderPass();
+	info.framebuffer = g_framebuffers[imageIndex]->GetFramebuffer();
+	info.renderArea.extent.width = g_cameraProperties.width;
+	info.renderArea.extent.height = g_cameraProperties.height;
+	info.clearValueCount = 1;
+	info.pClearValues = &clearValue;
+	vkCmdBeginRenderPass(commandBuffer, &info, VK_SUBPASS_CONTENTS_INLINE);
+
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+
+	vkCmdEndRenderPass(commandBuffer);
+
+	ValidCheck(vkEndCommandBuffer(commandBuffer));
 }
 
 void UpdateShadowVolume()
@@ -318,14 +356,20 @@ void ClearSwapchain()
 	// Recreate result images. They should match the resolution of the screen
 	delete g_pathTraceImageView;
 	delete g_pathTracerImage;
+	g_pathTraceImageView = nullptr;
+	g_pathTracerImage = nullptr;
 
-	// Recreate the pipelines, since they depend on the swapchain
-	delete g_pathTracerPipeline;
-	delete g_pathTracerPipelineLayout;
+	// Recreate framebuffers
+	for (auto& framebuffer : g_framebuffers)
+	{
+		delete framebuffer;
+		framebuffer = nullptr;
+	}
 
 	// Recreate swapchain image views and swapchain
 	g_swapchainImageViews.clear();
 	delete g_swapchain;
+	g_swapchain = nullptr;
 
 	std::cout << "OK" << std::endl;
 }
@@ -369,17 +413,24 @@ void CreateSwapchain()
 	vkUpdateDescriptorSets(g_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
 	// Recreate command buffers
-	g_computeCommandPool->AllocateCommandBuffers(MAX_FRAMES_IN_FLIGHT);
+	g_computeCommandPool->AllocateCommandBuffers(g_swapchain->GetSwapchainImages().size());
+	g_graphicsCommandPool->AllocateCommandBuffers(g_swapchain->GetSwapchainImages().size());
 }
 
 void Clear()
 {
+
+	delete g_imguiLayer;
+
 	ClearSwapchain();
 
 	std::cout << "Clearing allocations...";
 	g_inFlightFences.clear();
 	g_renderFinishedSemaphores.clear();
 	g_imageAvailableSemaphores.clear();
+
+	// Graphics
+	delete g_graphicsCommandPool;
 
 	// Shadow Volume
 	delete g_shadowVolumePipeline;
@@ -390,7 +441,6 @@ void Clear()
 	delete g_shadowVolumeImageView;
 	delete g_shadowVolumeSampler;
 	delete g_shadowVolumePropertiesBuffer;
-
 
 	// Cloud Memory Allocations
 	delete g_cloudImageView;
@@ -405,6 +455,8 @@ void Clear()
 	delete g_computeCommandPool;
 	delete g_computeDescriptorPool;
 	delete g_pathTracerDescriptorSetLayout;
+	delete g_pathTracerPipeline;
+	delete g_pathTracerPipelineLayout;
 
 	// Vulkan General Resources
 	delete g_device;
@@ -416,6 +468,19 @@ void Clear()
 	glfwTerminate();
 
 	std::cout << "OK" << std::endl;
+}
+
+void DrawUI()
+{
+	ImGui_ImplVulkan_NewFrame();
+	ImGui_ImplGlfw_NewFrame();
+	ImGui::NewFrame();
+
+	ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
+	ImGui::ShowDemoWindow();
+	ImGui::End();
+
+	ImGui::Render();
 }
 
 void DrawFrame()
@@ -451,19 +516,21 @@ void DrawFrame()
 	vkUpdateDescriptorSets(g_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
 	// Record commands
-	RecordFrameCommands(imageIndex);
+	RecordComputeCommands(imageIndex);
+	RecordImGUICommands(imageIndex);
 
 	// Submit command buffer to queue
-	std::vector<VkCommandBuffer>& commandBuffers = g_computeCommandPool->GetCommandBuffers();
-	VkSubmitInfo submitInfo = initializers::SubmitInfo();
+	std::vector<VkCommandBuffer> commandBuffers{ g_computeCommandPool->GetCommandBuffers()[g_currentFrame], g_graphicsCommandPool->GetCommandBuffers()[g_currentFrame] };
 	VkSemaphore waitSemaphores[] = { g_imageAvailableSemaphores[g_currentFrame].GetSemaphore() };
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT };
 	VkSemaphore signalSemaphores[] = { g_renderFinishedSemaphores[g_currentFrame].GetSemaphore() };
+
+	VkSubmitInfo submitInfo = initializers::SubmitInfo();
 	submitInfo.waitSemaphoreCount = 1;
 	submitInfo.pWaitSemaphores = waitSemaphores;
 	submitInfo.pWaitDstStageMask = waitStages;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &commandBuffers[g_currentFrame];
+	submitInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
+	submitInfo.pCommandBuffers = commandBuffers.data();
 	submitInfo.signalSemaphoreCount = 1;
 	submitInfo.pSignalSemaphores = signalSemaphores;
 
@@ -492,8 +559,11 @@ void DrawFrame()
 void RenderLoop()
 {
 	std::cout << "Render Loop started" << std::endl;
-	while (!g_exitProgram)
+	while (!glfwWindowShouldClose(g_window))
 	{
+		glfwPollEvents();
+
+		UpdateTime();
 		if (g_isShadowVolumeDirty)
 		{
 			UpdateShadowVolume();
@@ -502,25 +572,16 @@ void RenderLoop()
 		g_pushConstants.seed = std::rand();
 		if (!glfwGetWindowAttrib(g_window, GLFW_ICONIFIED))
 		{
+			DrawUI();
 			DrawFrame();
 			g_pushConstants.frameCount++;
 			g_framesInSecond++;
 		}
 	}
+
 	std::cout << "Render Loop stopped" << std::endl;
 	vkDeviceWaitIdle(g_device->GetDevice());
 	std::cout << "Device Finished" << std::endl;
-}
-
-void InputLoop()
-{
-	while (!glfwWindowShouldClose(g_window))
-	{
-		UpdateTime();
-		glfwPollEvents();
-	}
-
-	g_exitProgram = true;
 }
 
 void FramebufferResizeCallback(GLFWwindow* window, int width, int height)
@@ -531,6 +592,29 @@ void FramebufferResizeCallback(GLFWwindow* window, int width, int height)
 }
 
 
+void InitializeImGUI()
+{
+	ImGui_ImplVulkan_InitInfo initInfo{};
+
+	initInfo.Instance = g_instance->GetInstance();
+	initInfo.PhysicalDevice = g_physicalDevice->GetPhysicaDevice();
+	initInfo.Device = g_device->GetDevice();
+	initInfo.QueueFamily = g_physicalDevice->GetQueueFamilyIndices().graphicsFamily;
+	initInfo.Queue = g_device->GetGraphicsQueue();
+	initInfo.PipelineCache = VK_NULL_HANDLE; //Unused
+	initInfo.DescriptorPool = VK_NULL_HANDLE; // Created by imguiLayer;
+	initInfo.Allocator = nullptr; //Unused
+	initInfo.MinImageCount = 2;
+	initInfo.ImageCount = static_cast<uint32_t>(g_swapchain->GetSwapchainImages().size());
+	initInfo.CheckVkResultFn = ValidCheck;
+
+	g_imguiLayer = new ImGUILayer(g_window, g_device, g_swapchain, initInfo);
+
+	VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+	ImGui_ImplVulkan_CreateFontsTexture(commandBuffer);
+	EndSingleTimeCommands(commandBuffer);
+}
+
 void AllocateShaderResources()
 {
 	// Shader Modules
@@ -539,7 +623,6 @@ void AllocateShaderResources()
 
 	auto shadowVolumeSPV = ReadFile("../shaders/ShadowVolume.comp.spv");
 	g_shadowVolumeShader = new VulkanShaderModule(g_device, shadowVolumeSPV);
-
 
 	// Buffers & Images
 	g_cameraPropertiesBuffer = new VulkanBuffer(g_device, &g_cameraProperties, sizeof(CameraProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
@@ -560,7 +643,6 @@ void AllocateShaderResources()
 	g_shadowVolumeImageView = new VulkanImageView(g_device, g_shadowVolumeImage);
 	g_shadowVolumeSampler = new VulkanSampler(g_device);
 
-
 	// Transfer cloud data to device image and make it readable by the shader
 	g_cloudPropertiesBuffer->SetData();
 
@@ -574,7 +656,6 @@ void AllocateShaderResources()
 	EndSingleTimeCommands(commandBuffer);
 
 	vkDeviceWaitIdle(g_device->GetDevice());
-
 
 	// Update static descriptor sets
 	std::vector<VkWriteDescriptorSet> cloudSetWrites;
@@ -620,8 +701,19 @@ void AllocatePipelines()
 	g_pathTracerPipelineLayout = new VulkanPipelineLayout(g_device, ptSetLayouts, ptPushConstantRanges);
 	g_pathTracerPipeline = new VulkanComputePipeline(g_device, g_pathTracerPipelineLayout, g_pathTracerShader);
 
-	// Swapchain and its dependent objects
+	// Create swapchain
 	CreateSwapchain();
+	if (!g_imguiLayer)
+	{
+		InitializeImGUI();
+	}
+
+	// Create framebuffers for ImGUI
+	g_framebuffers.resize(g_swapchainImageViews.size());
+	for (size_t i = 0; i < g_framebuffers.size(); i++)
+	{
+		g_framebuffers[i] = new VulkanFramebuffer(g_device, g_imguiLayer->GetRenderPass(), &g_swapchainImageViews[i], g_swapchain);
+	}
 
 	// Semaphores (GPU-GPU) and Fences (CPU-GPU)
 	g_imageAvailableSemaphores.reserve(MAX_FRAMES_IN_FLIGHT);
@@ -636,7 +728,7 @@ void AllocatePipelines()
 	g_imagesInFlight.resize(g_swapchain->GetSwapchainImages().size(), VK_NULL_HANDLE);
 }
 
-bool IntializeVulkan()
+bool InitializeVulkan()
 {
 	std::cout << "Initializing Vulkan... ";
 
@@ -664,6 +756,7 @@ bool IntializeVulkan()
 
 	// Command Pool
 	g_computeCommandPool = new VulkanCommandPool(g_device, g_physicalDevice->GetQueueFamilyIndices().computeFamily);
+	g_graphicsCommandPool = new VulkanCommandPool(g_device, g_physicalDevice->GetQueueFamilyIndices().graphicsFamily);
 
 	// Path Tracer Descriptor Set Layout
 	std::vector<VkDescriptorSetLayoutBinding> pathTracerSetLayoutBindings = {
@@ -728,7 +821,7 @@ bool IntializeVulkan()
 }
 
 
-bool InitializeWindow()
+bool InitializeGLFW()
 {
 	std::cout << "Initializing GLFW... ";
 
@@ -741,14 +834,6 @@ bool InitializeWindow()
 
 	std::cout << "OK" << std::endl;
 	return true;
-}
-
-void InitializeImGUI()
-{
-	ImGui_ImplVulkan_InitInfo initInfo{};
-	VkRenderPass renderPass;
-
-	g_imguiLayer = new ImGUILayer(g_window, initInfo, renderPass);
 }
 
 int main()
@@ -798,21 +883,11 @@ int main()
 	//lightDirection = glm::vec3(0, -1, 0);
 
 	// Initialize GLFW
-	if (!InitializeWindow())
-	{
-		return 1;
-	}
+	InitializeGLFW();
+	InitializeVulkan();
 
-	// Initialize Vulkan
-	if (!IntializeVulkan())
-	{
-		return 1;
-	}
+	RenderLoop();
 
-	std::thread renderThread(RenderLoop);
-	InputLoop();
-
-	renderThread.join();
 	Clear();
 
 	delete g_cloudData;

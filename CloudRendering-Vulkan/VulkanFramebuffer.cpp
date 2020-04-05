@@ -10,7 +10,7 @@ VulkanFramebuffer::VulkanFramebuffer(VulkanDevice* device, VulkanRenderPass* ren
 {
 	m_device = device;
 
-	VkImageView attachments[] = { swapchainImageView->GetImageView() };
+	std::vector<VkImageView> attachments{ swapchainImageView->GetImageView() };
 	VkFramebufferCreateInfo framebufferInfo = initializers::FramebufferCreateInfo(renderPass->GetRenderPass(), attachments, swapchain->GetExtent());
 
 	ValidCheck(vkCreateFramebuffer(m_device->GetDevice(), &framebufferInfo, nullptr, &m_framebuffer));
