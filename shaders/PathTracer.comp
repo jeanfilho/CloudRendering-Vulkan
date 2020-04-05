@@ -103,7 +103,6 @@ vec4 sampleShadowVolume(in vec3 pos)
     vec3 normalizedIdx =
         (shadowVolumeProperties.basisChange * (vec4(pos, 1) - shadowVolumeProperties.bounds[0]) /
         (shadowVolumeProperties.basisChange * (shadowVolumeProperties.bounds[1] - shadowVolumeProperties.bounds[0]))).xyz;
-        //((vec4(pos, 0) - shadowVolumeProperties.bounds[0])/(shadowVolumeProperties.bounds[1] - shadowVolumeProperties.bounds[0])).xyz;
     return vec4(texture(shadowSampler, normalizedIdx).x);
 }
 
