@@ -130,26 +130,6 @@ void UpdateTime()
 	}
 }
 
-std::vector<char> ReadFile(const std::string& filename)
-{
-	std::ifstream file(filename, std::ios::ate | std::ios::binary);
-
-	if (!file.is_open())
-	{
-		throw std::runtime_error("Failed to open file");
-	}
-
-	size_t fileSize = (size_t)file.tellg();
-	std::vector<char> buffer(fileSize);
-
-	file.seekg(0);
-	file.read(buffer.data(), fileSize);
-
-	file.close();
-
-	return buffer;
-}
-
 template<typename T>
 void SetCloudProperties(Grid3D<T>* grid)
 {
@@ -779,10 +759,12 @@ void InitializeImGUI()
 void AllocateShaderResources()
 {
 	// Shader Modules
-	auto pathTracerSPV = ReadFile("../shaders/PathTracer.comp.spv");
-	g_pathTracerShader = new VulkanShaderModule(g_device, pathTracerSPV);
+	std::vector<char> pathTracerSPV;
+	std::vector<char> shadowVolumeSPV;
 
-	auto shadowVolumeSPV = ReadFile("../shaders/ShadowVolume.comp.spv");
+	utilities::ReadFile("../shaders/PathTracer.comp.spv", pathTracerSPV);
+	g_pathTracerShader = new VulkanShaderModule(g_device, pathTracerSPV);
+	utilities::ReadFile("../shaders/ShadowVolume.comp.spv", shadowVolumeSPV);
 	g_shadowVolumeShader = new VulkanShaderModule(g_device, shadowVolumeSPV);
 
 	// Buffers & Images
