@@ -115,6 +115,10 @@ float g_UIPhaseG = g_parameters.GetPhaseG();
 float g_UISecondsPerFrame = 0;
 glm::vec2 g_UICameraRotate{ 0, 0 };
 glm::vec3 g_UILightDirection = g_shadowVolumeProperties.GetLightDirection();
+int g_UICurrentResolution = 0;
+int g_UIPreviousResolution = g_UICurrentResolution;
+const char* RESOLUTIONS_NAMES[] = { "800x600", "1920x1080" };
+const glm::ivec2 RESOLUTIONS[] = { {800, 600}, {1920, 1080} };
 
 //----------------------------------------------------------------------
 // Functions
@@ -439,6 +443,8 @@ void UpdateShadowVolume()
 
 void ClearSwapchain()
 {
+	vkDeviceWaitIdle(g_device->GetDevice());
+
 	std::cout << "Clearing swapchain...";
 
 	// Recreate result images. They should match the resolution of the screen
@@ -464,6 +470,8 @@ void ClearSwapchain()
 
 void CreateSwapchain()
 {
+	vkDeviceWaitIdle(g_device->GetDevice());
+
 	int width = 0, height = 0;
 	glfwGetFramebufferSize(g_window, &width, &height);
 	while (width == 0 || height == 0)
@@ -503,6 +511,17 @@ void CreateSwapchain()
 	// Recreate command buffers
 	g_computeCommandPool->AllocateCommandBuffers(g_swapchain->GetSwapchainImages().size());
 	g_graphicsCommandPool->AllocateCommandBuffers(g_swapchain->GetSwapchainImages().size());
+
+
+	// Create framebuffers for ImGUI if already present
+	if (g_imguiLayer)
+	{
+		g_framebuffers.resize(g_swapchainImageViews.size());
+		for (size_t i = 0; i < g_framebuffers.size(); i++)
+		{
+			g_framebuffers[i] = new VulkanFramebuffer(g_device, g_imguiLayer->GetRenderPass(), &g_swapchainImageViews[i], g_swapchain);
+		}
+	}
 }
 
 void Clear()
@@ -599,6 +618,7 @@ void DrawUI()
 		ImGui::Text("Camera");
 		ImGui::InputFloat3("Position ", &g_cameraProperties.position[0], 2);
 		ImGui::InputFloat2("Rotation ", &g_UICameraRotate[0], 2);
+		ImGui::Combo("Resolution", &g_UICurrentResolution, RESOLUTIONS_NAMES, IM_ARRAYSIZE(RESOLUTIONS_NAMES));
 
 		ImGui::Separator();
 
@@ -612,6 +632,16 @@ void DrawUI()
 
 		if (ImGui::Button("Apply"))
 		{
+
+			if (g_UIPreviousResolution != g_UICurrentResolution)
+			{
+				g_UIPreviousResolution = g_UICurrentResolution;
+				glfwSetWindowSize(g_window, RESOLUTIONS[g_UICurrentResolution].x, RESOLUTIONS[g_UICurrentResolution].y);
+
+				ClearSwapchain();
+				CreateSwapchain();
+			}
+
 			// Update data in memory
 			g_parameters.SetPhaseG(g_UIPhaseG);
 			g_cameraProperties.SetRotation(g_UICameraRotate);
