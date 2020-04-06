@@ -119,6 +119,7 @@ int g_UICurrentResolution = 0;
 int g_UIPreviousResolution = g_UICurrentResolution;
 const char* RESOLUTIONS_NAMES[] = { "800x600", "1920x1080" };
 const glm::ivec2 RESOLUTIONS[] = { {800, 600}, {1920, 1080} };
+float g_UIFov = 90.f;
 
 //----------------------------------------------------------------------
 // Functions
@@ -618,6 +619,7 @@ void DrawUI()
 		ImGui::Text("Camera");
 		ImGui::InputFloat3("Position ", &g_cameraProperties.position[0], 2);
 		ImGui::InputFloat2("Rotation ", &g_UICameraRotate[0], 2);
+		ImGui::InputFloat("FOV", &g_UIFov);
 		ImGui::Combo("Resolution", &g_UICurrentResolution, RESOLUTIONS_NAMES, IM_ARRAYSIZE(RESOLUTIONS_NAMES));
 
 		ImGui::Separator();
@@ -643,7 +645,9 @@ void DrawUI()
 			}
 
 			// Update data in memory
+
 			g_parameters.SetPhaseG(g_UIPhaseG);
+			g_cameraProperties.SetFOV(g_UIFov);
 			g_cameraProperties.SetRotation(g_UICameraRotate);
 
 			g_parametersBuffer->SetData();
@@ -1003,13 +1007,9 @@ int main()
 	// Seed random
 	std::srand(static_cast<unsigned int>(std::time(nullptr)));
 
-#ifdef _DEBUG
-	tests::RunTests();
-	LoadCloudFile("cloud-1940.xyz");
-#else
 	g_cloudData = new Grid3D<float>(100, 100, 100, .01, .01, .01);
 	SetCloudProperties(g_cloudData);
-#endif
+	g_cameraProperties.SetFOV(g_UIFov);
 
 	// Initialize Framework
 	InitializeGLFW();

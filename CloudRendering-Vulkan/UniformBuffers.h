@@ -6,14 +6,14 @@ struct CameraProperties
 {
 	glm::vec3 position = glm::vec3(0, 0, -500);
 private:
-	int width = 800;
+	int halfWidth = 800/2;
 	glm::vec3 forward = glm::vec3(0, 0, 1);
-	int height = 600;
+	int halfHeight = 600/2;
 	glm::vec3 right = glm::vec3(1, 0, 0);
 	float nearPlane = 50.0f;
 	glm::vec3 up = glm::vec3(0, 1, 0);
-	float pixelSizeX = .2f;
-	float pixelSizeY = .2f;
+	float pixelSizeY = (2 * glm::tan(glm::radians(120 / 2.f)) * nearPlane) / (halfHeight * 2);
+	float pixelSizeX = pixelSizeY * static_cast<float>(halfHeight) / static_cast<float>(halfWidth);
 
 public:
 	void SetRotation(glm::vec2& rotation)
@@ -26,17 +26,30 @@ public:
 
 	int GetWidth()
 	{
-		return width;
+		return halfWidth * 2;
 	}
 	int GetHeight()
 	{
-		return height;
+		return halfHeight * 2;
 	}
 
 	void SetResolution(int newWidth, int newHeight)
 	{
-		width = newWidth;
-		height = newHeight;
+		halfWidth = newWidth/2;
+		halfHeight = newHeight/2;
+	}
+
+	void SetFOV(float& fov)
+	{
+		fov = std::clamp(fov, 60.f, 150.f);
+		float height = 2 * glm::tan(glm::radians(fov / 2.f)) * nearPlane;
+		pixelSizeY = height / (halfHeight * 2);
+		pixelSizeX = pixelSizeY * static_cast<float>(halfHeight) / static_cast<float>(halfWidth);
+	}
+
+	float GetNearPlane()
+	{
+		return nearPlane;
 	}
 };
 

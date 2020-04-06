@@ -29,14 +29,14 @@ layout (binding = 0, rgba32f) uniform image2D resultImage;
 layout (binding = 1) uniform CameraProperties
 {
 	vec3 position;
-	int width;
+	int halfWidth;
 	vec3 forward;
-    int height;
+    int halfHeight;
     vec3 right;
     float nearPlane;
     vec3 up;
-    float pixelSizeX;
     float pixelSizeY;
+    float pixelSizeX;
 
 } cameraProperties;
 
@@ -124,8 +124,8 @@ int isNegativeSign(in float value)
 void getCameraRay(in ivec2 coord, out Ray ray)
 {
     ray.dir = cameraProperties.forward * cameraProperties.nearPlane
-                    + cameraProperties.right  * cameraProperties.pixelSizeX * (coord.x - cameraProperties.width/2)
-                    - cameraProperties.up * cameraProperties.pixelSizeY * (coord.y - cameraProperties.height/2);
+                    + cameraProperties.right  * cameraProperties.pixelSizeX * (coord.x - cameraProperties.halfWidth)
+                    - cameraProperties.up * cameraProperties.pixelSizeY * (coord.y - cameraProperties.halfHeight);
     ray.pos = ray.dir + cameraProperties.position;
     ray.dir = normalize(ray.dir);
 }
@@ -393,7 +393,7 @@ bool findScatterPoint(inout Ray ray)
 //---------------------------------------------------------
 void main() 
 {
-    initializeRandom(pushConstants.seed + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * cameraProperties.width);
+    initializeRandom(pushConstants.seed + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * cameraProperties.halfWidth * 2);
 
     Ray ray;    
     vec4 result = vec4(0.0f);
