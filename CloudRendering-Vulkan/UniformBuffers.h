@@ -55,7 +55,7 @@ public:
 	unsigned int maxRayBounces = 5;
 	float lightIntensity = 5;
 private:
-	float phaseG = 0.0f; // [-1, 1]
+	float phaseG = 0.00000001f; // [-1, 1]
 	float phaseOnePlusG2 = 1.0f + phaseG * phaseG;
 	float phaseOneMinusG2 = 1.0f - phaseG * phaseG;
 	float phaseOneOver2G = 0.5f / phaseG;

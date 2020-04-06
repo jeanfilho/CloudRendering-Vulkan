@@ -187,6 +187,8 @@ bool LoadCloudFile(const std::string filename)
 		return false;
 	}
 
+	g_UICurrentCloudFile = filename;
+
 	SetCloudProperties(g_cloudData);
 
 	std::cout << "OK" << std::endl;
@@ -370,6 +372,60 @@ void RecordImGUICommands(uint32_t imageIndex)
 	ValidCheck(vkEndCommandBuffer(commandBuffer));
 }
 
+void UpdateCloudData()
+{
+	vkDeviceWaitIdle(g_device->GetDevice());
+
+	if (g_cloudImage)
+	{
+		delete g_cloudImage;
+		delete g_cloudImageView;
+		delete g_cloudSampler;
+	}
+
+	g_cloudImage = new VulkanImage(
+		g_device,
+		VK_FORMAT_R32_SFLOAT,
+		VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		static_cast<uint32_t>(g_cloudProperties.voxelCount.x),
+		static_cast<uint32_t>(g_cloudProperties.voxelCount.y),
+		static_cast<uint32_t>(g_cloudProperties.voxelCount.z));
+	g_cloudImageView = new VulkanImageView(g_device, g_cloudImage);
+	g_cloudSampler = new VulkanSampler(g_device);
+
+	{
+		VulkanBuffer stagingBuffer(g_device, g_cloudData->GetData(), g_cloudData->GetElementSize(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, g_cloudData->GetSize());
+		stagingBuffer.SetData();
+
+		VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+		CmdTransitionImageLayout(commandBuffer, g_cloudImage->GetImage(), g_cloudImage->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		CmdCopyBufferToImage(commandBuffer, stagingBuffer.GetBuffer(), g_cloudImage->GetImage(), g_cloudImage->GetExtent());
+		CmdTransitionImageLayout(commandBuffer, g_cloudImage->GetImage(), g_cloudImage->GetFormat(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		EndSingleTimeCommands(commandBuffer);
+
+		vkDeviceWaitIdle(g_device->GetDevice());
+	}
+
+	{
+		g_cloudPropertiesBuffer->SetData();
+
+		auto cloudBufferInfo = initializers::DescriptorBufferInfo(g_cloudPropertiesBuffer->GetBuffer(), 0, g_cloudPropertiesBuffer->GetSize());
+		auto cloudImageInfo = initializers::DescriptorImageInfo(g_cloudSampler->GetSampler(), g_cloudImageView->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		std::vector<VkWriteDescriptorSet> writes;
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+		{
+			writes.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo));
+			writes.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
+		};
+		writes.push_back(initializers::WriteDescriptorSet(g_shadowVolumeDescriptorSets[0], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo));
+
+		vkUpdateDescriptorSets(g_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+	}
+
+	g_pushConstants.frameCount = 0;
+	g_renderStartTime = g_pushConstants.time;
+}
+
 void UpdateShadowVolume()
 {
 	g_shadowVolumeProperties.SetLightDirection(g_UILightDirection);
@@ -396,6 +452,9 @@ void UpdateShadowVolume()
 		writes.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6, &bufferInfo));
 	}
 	vkUpdateDescriptorSets(g_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+
+	g_pushConstants.frameCount = 0;
+	g_renderStartTime = g_pushConstants.time;
 }
 
 void ClearSwapchain()
@@ -541,7 +600,11 @@ void DrawUI()
 		ImGui::SameLine();
 		if (ImGui::Button("Load"))
 		{
-			LoadCloudFile(std::string(g_UICloudFile));
+			if (LoadCloudFile(std::string(g_UICloudFile)))
+			{
+				UpdateCloudData();
+				UpdateShadowVolume();
+			}
 		}
 	}
 	ImGui::End();
@@ -576,9 +639,6 @@ void DrawUI()
 			g_parametersBuffer->SetData();
 			g_cameraPropertiesBuffer->SetData();
 			g_cloudPropertiesBuffer->SetData();
-
-			g_pushConstants.frameCount = 0;
-			g_renderStartTime = g_pushConstants.time;
 
 			// Wait for all frames to finish
 			vkDeviceWaitIdle(g_device->GetDevice());
@@ -729,55 +789,32 @@ void AllocateShaderResources()
 	g_cameraPropertiesBuffer = new VulkanBuffer(g_device, &g_cameraProperties, sizeof(CameraProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 	g_cloudPropertiesBuffer = new VulkanBuffer(g_device, &g_cloudProperties, sizeof(CloudProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 	g_parametersBuffer = new VulkanBuffer(g_device, &g_parameters, sizeof(Parameters), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-	g_cloudImage = new VulkanImage(
-		g_device,
-		VK_FORMAT_R32_SFLOAT,
-		VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-		static_cast<uint32_t>(g_cloudProperties.voxelCount.x),
-		static_cast<uint32_t>(g_cloudProperties.voxelCount.y),
-		static_cast<uint32_t>(g_cloudProperties.voxelCount.z));
-	g_cloudImageView = new VulkanImageView(g_device, g_cloudImage);
-	g_cloudSampler = new VulkanSampler(g_device);
 
 	g_shadowVolumePropertiesBuffer = new VulkanBuffer(g_device, &g_shadowVolumeProperties, sizeof(ShadowVolumeProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 	g_shadowVolumeImage = new VulkanImage(g_device, VK_FORMAT_R32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, g_shadowVolumeProperties.voxelAxisCount, g_shadowVolumeProperties.voxelAxisCount, g_shadowVolumeProperties.voxelAxisCount);
 	g_shadowVolumeImageView = new VulkanImageView(g_device, g_shadowVolumeImage);
 	g_shadowVolumeSampler = new VulkanSampler(g_device);
 
-
 	g_cameraPropertiesBuffer->SetData();
 	g_parametersBuffer->SetData();
-	g_cloudPropertiesBuffer->SetData();
 
 	// Transfer cloud data to device image and make it readable by the shader
-	VulkanBuffer stagingBuffer(g_device, g_cloudData->GetData(), g_cloudData->GetElementSize(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, g_cloudData->GetSize());
-	stagingBuffer.SetData();
-
-	VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
-	CmdTransitionImageLayout(commandBuffer, g_cloudImage->GetImage(), g_cloudImage->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-	CmdCopyBufferToImage(commandBuffer, stagingBuffer.GetBuffer(), g_cloudImage->GetImage(), g_cloudImage->GetExtent());
-	CmdTransitionImageLayout(commandBuffer, g_cloudImage->GetImage(), g_cloudImage->GetFormat(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-	EndSingleTimeCommands(commandBuffer);
-
-	vkDeviceWaitIdle(g_device->GetDevice());
+	UpdateCloudData();
 
 	// Update descriptor sets
 	std::vector<VkWriteDescriptorSet> cloudSetWrites;
 	auto parameterInfo = initializers::DescriptorBufferInfo(g_cameraPropertiesBuffer->GetBuffer(), 0, g_cameraPropertiesBuffer->GetSize());
 	auto cameraPropertiesInfo = initializers::DescriptorBufferInfo(g_parametersBuffer->GetBuffer(), 0, g_parametersBuffer->GetSize());
 	auto shadowImageInfo = initializers::DescriptorImageInfo(g_shadowVolumeSampler->GetSampler(), g_shadowVolumeImageView->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-	auto cloudImageInfo = initializers::DescriptorImageInfo(g_cloudSampler->GetSampler(), g_cloudImageView->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 	auto cloudBufferInfo = initializers::DescriptorBufferInfo(g_cloudPropertiesBuffer->GetBuffer(), 0, g_cloudPropertiesBuffer->GetSize());
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		cloudSetWrites.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &parameterInfo));
-		cloudSetWrites.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo));
 		cloudSetWrites.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
 		cloudSetWrites.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &cameraPropertiesInfo));
 		cloudSetWrites.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &shadowImageInfo));
 	};
 	vkUpdateDescriptorSets(g_device->GetDevice(), static_cast<uint32_t>(cloudSetWrites.size()), cloudSetWrites.data(), 0, nullptr);
-
 
 	// Update camera properties
 	std::vector<VkWriteDescriptorSet> writes{
@@ -788,7 +825,6 @@ void AllocateShaderResources()
 	std::vector<VkWriteDescriptorSet> shadowVolumeWrites
 	{
 		initializers::WriteDescriptorSet(g_shadowVolumeDescriptorSets[0], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &shadowImageInfo),
-		initializers::WriteDescriptorSet(g_shadowVolumeDescriptorSets[0], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo),
 		initializers::WriteDescriptorSet(g_shadowVolumeDescriptorSets[0], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo)
 	};
 	vkUpdateDescriptorSets(g_device->GetDevice(), static_cast<uint32_t>(shadowVolumeWrites.size()), shadowVolumeWrites.data(), 0, nullptr);
