@@ -588,7 +588,7 @@ void DrawUI()
 	{
 		ImGui::Text("FrameCount: %i", g_pushConstants.frameCount);
 		ImGui::Text("Elapsed time: %.2f", g_pushConstants.time - g_renderStartTime);
-		ImGui::Text("Seconds per Frame: %.2f", g_UISecondsPerFrame);
+		ImGui::Text("ms/frame: %.2f", g_UISecondsPerFrame);
 	}
 	ImGui::End();
 

@@ -4,7 +4,7 @@
 
 struct CameraProperties
 {
-	glm::vec3 position = glm::vec3(0, 0, -500);
+	glm::vec3 position = glm::vec3(0, 0, -800);
 private:
 	int halfWidth = 800/2;
 	glm::vec3 forward = glm::vec3(0, 0, 1);
