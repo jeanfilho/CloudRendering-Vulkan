@@ -4,7 +4,8 @@
 
 struct CameraProperties
 {
-	glm::vec3 position = glm::vec3(0, 0, 0);
+	glm::vec3 position = glm::vec3(0, 0, -500);
+private:
 	int width = 800;
 	glm::vec3 forward = glm::vec3(0, 0, 1);
 	int height = 600;
@@ -14,6 +15,29 @@ struct CameraProperties
 	float pixelSizeX = .2f;
 	float pixelSizeY = .2f;
 
+public:
+	void SetRotation(glm::vec2& rotation)
+	{
+		rotation.x = std::clamp(rotation.x, -80.f, 80.f);
+
+		forward = glm::rotate(glm::radians(rotation.x), glm::vec3(1, 0, 0)) * glm::rotate(glm::radians(rotation.y), glm::vec3(0, 1, 0)) * glm::vec4(0, 0, 1, 0);
+		utilities::GetOrthonormalBasis(forward, right, up);
+	}
+
+	int GetWidth()
+	{
+		return width;
+	}
+	int GetHeight()
+	{
+		return height;
+	}
+
+	void SetResolution(int newWidth, int newHeight)
+	{
+		width = newWidth;
+		height = newHeight;
+	}
 };
 
 struct CloudProperties
@@ -22,20 +46,20 @@ struct CloudProperties
 	glm::uvec4 voxelCount = glm::uvec4(0);
 	float maxExtinction = 0.2f;
 	float baseScaling = 1000.f;
-	float densityScaling = 1.f;
+	float densityScaling = 200.f;
 };
 
 struct Parameters
 {
 public:
 	unsigned int maxRayBounces = 5;
-	float lightIntensity = 1;
+	float lightIntensity = 5;
 private:
-	float phaseG = 0.67f; // [-1, 1]
+	float phaseG = 0.0f; // [-1, 1]
 	float phaseOnePlusG2 = 1.0f + phaseG * phaseG;
 	float phaseOneMinusG2 = 1.0f - phaseG * phaseG;
 	float phaseOneOver2G = 0.5f / phaseG;
-	bool isotropic = false;
+	bool isotropic = std::abs(phaseG) < 0.0001f;
 
 public:
 	void SetPhaseG(float value)
@@ -52,6 +76,11 @@ public:
 			phaseOneOver2G = 0.5f / phaseG;
 		}
 	}
+
+	float GetPhaseG()
+	{
+		return phaseG;
+	}
 };
 
 struct ShadowVolumeProperties
@@ -59,12 +88,12 @@ struct ShadowVolumeProperties
 	friend glm::vec3 tests::calculateVoxelPosition(glm::uvec3 voxelIdx, ShadowVolumeProperties& shadowVolumeProperties);
 private:
 	glm::vec4 bounds[2]{ glm::vec4(0), glm::vec4(0) };
-	glm::vec4 lightDirection{ 0, 0, 1, 0 };
+	glm::vec4 lightDirection{ 1, -1, 0, 0 };
 	glm::vec4 right{ 1, 0, 0, 0 };
 	glm::vec4 up{ 0, 1, 0, 0 };
+	glm::mat4 basisChange{ lightDirection, right, up, glm::vec4(0) };
 
 public:
-	glm::mat4 basisChange{ lightDirection, right, up, glm::vec4(0)};
 	glm::uint voxelAxisCount = 500;
 	glm::float32 voxelSize = 1.0f;
 
@@ -75,13 +104,7 @@ public:
 		glm::vec3 newRight, newUp;
 		newDir = glm::normalize(newDir);
 
-		float sz = newDir.z >= 0.0f ? 1.0f : -1.0f;
-		float a = newDir.y / (1.0f + abs(newDir.z));
-		float b = newDir.y * a;
-		float c = -newDir.x * a;
-
-		newRight = glm::vec3(newDir.z + sz * b, sz * c, -newDir.x);
-		newUp = glm::vec3(c, 1.0f - b, -sz * newDir.y);
+		utilities::GetOrthonormalBasis(newDir, newRight, newUp);
 
 		lightDirection = glm::vec4(newDir.x, newDir.y, newDir.z, 0);
 		right = glm::vec4(newRight.x, newRight.y, newRight.z, 0);
@@ -96,6 +119,11 @@ public:
 		voxelSize = (2 * sphereRadius) / (voxelAxisCount - 1);
 
 		UpdateOrigin(sphereRadius, (lowerBound + upperBound) / 2.f);
+	}
+
+	const glm::vec4& GetLightDirection()
+	{
+		return lightDirection;
 	}
 
 private:

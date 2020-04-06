@@ -399,9 +399,6 @@ void main()
     vec4 result = vec4(0.0f);
     ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
 
-    // imageStore(resultImage, pixelCoord, vec4(generateRandomNumber()));
-    // return;
-
     // Get ray direction and volume entry point
     getCameraRay(pixelCoord, ray);
     vec3 rayPos = ray.pos;
@@ -417,11 +414,8 @@ void main()
         Ray currentRay = ray;
 
         // Path tracer loop
-        uint i = 0;
         while(true)
         {
-            i++;
-
             // Move along current ray direction and check if ray is still in the cloud
             if(!findScatterPoint(ray))
             {  

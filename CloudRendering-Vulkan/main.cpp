@@ -27,6 +27,29 @@
 #include "UniformBuffers.h"
 #include "ImGUILayer.h"
 
+
+//--------------------------------------------------------------
+// Shader Resources
+//--------------------------------------------------------------
+ShadowVolumeProperties g_shadowVolumeProperties;
+VulkanBuffer* g_shadowVolumePropertiesBuffer;
+
+CameraProperties g_cameraProperties;
+VulkanBuffer* g_cameraPropertiesBuffer;
+
+CloudProperties g_cloudProperties;
+VulkanBuffer* g_cloudPropertiesBuffer;
+
+Parameters g_parameters;
+VulkanBuffer* g_parametersBuffer;
+
+struct PushConstants
+{
+	double  time = 0;
+	int seed = 100;
+	unsigned int frameCount = 0;
+} g_pushConstants;
+
 //--------------------------------------------------------------
 // Globals
 //--------------------------------------------------------------
@@ -78,35 +101,20 @@ bool g_framebufferResized = false;
 GLFWwindow* g_window;
 const int MAX_FRAMES_IN_FLIGHT = 1;
 
+double g_renderStartTime = 0;
 double g_previousTime = 0;
 unsigned int g_framesInSecond = 0;
 
-glm::vec3 g_lightDirection;
+//----------------------------------------------------------------------
+// UI
+//----------------------------------------------------------------------
 
-bool g_isShadowVolumeDirty = true;
-bool g_exitProgram = false;
-
-//--------------------------------------------------------------
-// Shader Resources
-//--------------------------------------------------------------
-ShadowVolumeProperties g_shadowVolumeProperties;
-VulkanBuffer* g_shadowVolumePropertiesBuffer;
-
-CameraProperties g_cameraProperties;
-VulkanBuffer* g_cameraPropertiesBuffer;
-
-CloudProperties g_cloudProperties;
-VulkanBuffer* g_cloudPropertiesBuffer;
-
-Parameters g_parameters;
-VulkanBuffer* g_parametersBuffer;
-
-struct PushConstants
-{
-	double  time = 0;
-	int seed = 100;
-	unsigned int frameCount = 0;
-} g_pushConstants;
+char g_UICloudFile[1024];
+std::string g_UICurrentCloudFile = " ";
+float g_UIPhaseG = g_parameters.GetPhaseG();
+float g_UISecondsPerFrame = 0;
+glm::vec2 g_UICameraRotate{ 0, 0 };
+glm::vec3 g_UILightDirection = g_shadowVolumeProperties.GetLightDirection();
 
 //----------------------------------------------------------------------
 // Functions
@@ -116,7 +124,7 @@ void UpdateTime()
 	g_pushConstants.time = glfwGetTime();
 	if (g_pushConstants.time - g_previousTime >= 1.0)
 	{
-		printf("%f ms/frame\n", 1000.0 / double(g_framesInSecond));
+		g_UISecondsPerFrame = static_cast<float>(1000.0 / double(g_framesInSecond));
 		g_framesInSecond = 0;
 		g_previousTime += 1.0;
 	}
@@ -140,6 +148,49 @@ std::vector<char> ReadFile(const std::string& filename)
 	file.close();
 
 	return buffer;
+}
+
+template<typename T>
+void SetCloudProperties(Grid3D<T>* grid)
+{
+	glm::vec3 cloudSize{
+		grid->GetVoxelSize().x * grid->GetVoxelCount().x * g_cloudProperties.baseScaling,
+		grid->GetVoxelSize().y * grid->GetVoxelCount().y * g_cloudProperties.baseScaling,
+		grid->GetVoxelSize().z * grid->GetVoxelCount().z * g_cloudProperties.baseScaling };
+
+	g_cloudProperties.maxExtinction = grid->GetMajorant();
+	g_cloudProperties.voxelCount = glm::uvec4(grid->GetVoxelCount(), 0);
+	g_cloudProperties.bounds[0] = glm::vec4(
+		-cloudSize.x / 2,
+		-cloudSize.y / 2,
+		0,
+		0
+	);
+	g_cloudProperties.bounds[1] = -g_cloudProperties.bounds[0] + glm::vec4(0, 0, cloudSize.z, 0);
+}
+
+
+bool LoadCloudFile(const std::string filename)
+{
+	std::cout << "Loading cloud file...";
+
+	if (g_cloudData)
+	{
+		delete g_cloudData;
+		g_cloudData = nullptr;
+	}
+
+	g_cloudData = Grid3D<float>::Load("../models/" + filename);
+	if (!g_cloudData)
+	{
+		std::cout << " ERROR: Failed to load file \"" + filename + "\" in models folder" << std::endl;
+		return false;
+	}
+
+	SetCloudProperties(g_cloudData);
+
+	std::cout << "OK" << std::endl;
+	return true;
 }
 
 void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
@@ -258,7 +309,7 @@ void RecordComputeCommands(uint32_t imageIndex)
 	vkCmdPushConstants(commandBuffer, g_pathTracerPipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &g_pushConstants);
 
 	// Start compute shader
-	vkCmdDispatch(commandBuffer, g_cameraProperties.width, g_cameraProperties.height, 1);
+	vkCmdDispatch(commandBuffer, g_cameraProperties.GetWidth(), g_cameraProperties.GetHeight(), 1);
 
 	// Change swapchain image layout to dst blit
 	CmdTransitionImageLayout(commandBuffer, swapchainImage, g_swapchain->GetImageFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
@@ -278,7 +329,7 @@ void RecordComputeCommands(uint32_t imageIndex)
 	blit.srcOffsets[1] = { static_cast<int32_t>(extents.width), static_cast<int32_t>(extents.height), static_cast<int32_t>(extents.depth) };
 	blit.srcSubresource = layers;
 	blit.dstOffsets[0] = { 0,0,0 };
-	blit.dstOffsets[1] = { g_cameraProperties.width, g_cameraProperties.height, 1 };
+	blit.dstOffsets[1] = { g_cameraProperties.GetWidth(), g_cameraProperties.GetHeight(), 1 };
 	blit.dstSubresource = layers;
 
 	vkCmdBlitImage(commandBuffer, pathTracerImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
@@ -306,8 +357,8 @@ void RecordImGUICommands(uint32_t imageIndex)
 	info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	info.renderPass = g_imguiLayer->GetRenderPass()->GetRenderPass();
 	info.framebuffer = g_framebuffers[imageIndex]->GetFramebuffer();
-	info.renderArea.extent.width = g_cameraProperties.width;
-	info.renderArea.extent.height = g_cameraProperties.height;
+	info.renderArea.extent.width = g_cameraProperties.GetWidth();
+	info.renderArea.extent.height = g_cameraProperties.GetHeight();
 	info.clearValueCount = 1;
 	info.pClearValues = &clearValue;
 	vkCmdBeginRenderPass(commandBuffer, &info, VK_SUBPASS_CONTENTS_INLINE);
@@ -321,7 +372,7 @@ void RecordImGUICommands(uint32_t imageIndex)
 
 void UpdateShadowVolume()
 {
-	g_shadowVolumeProperties.SetLightDirection(g_lightDirection);
+	g_shadowVolumeProperties.SetLightDirection(g_UILightDirection);
 	g_shadowVolumeProperties.SetOrigin(g_cloudProperties.bounds[0], g_cloudProperties.bounds[1]);
 	g_shadowVolumePropertiesBuffer->SetData();
 
@@ -345,8 +396,6 @@ void UpdateShadowVolume()
 		writes.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6, &bufferInfo));
 	}
 	vkUpdateDescriptorSets(g_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-
-	g_isShadowVolumeDirty = false;
 }
 
 void ClearSwapchain()
@@ -400,7 +449,7 @@ void CreateSwapchain()
 	}
 
 	// Compute result image and view
-	g_pathTracerImage = new VulkanImage(g_device, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT, static_cast<uint32_t>(g_cameraProperties.width), static_cast<uint32_t>(g_cameraProperties.height));
+	g_pathTracerImage = new VulkanImage(g_device, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT, static_cast<uint32_t>(g_cameraProperties.GetWidth()), static_cast<uint32_t>(g_cameraProperties.GetHeight()));
 	g_pathTraceImageView = new VulkanImageView(g_device, g_pathTracerImage);
 
 	// Update compute bindings for output image
@@ -476,8 +525,80 @@ void DrawUI()
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 
-	ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
-	ImGui::ShowDemoWindow();
+	ImGui::Begin("Rendering Stats");
+	{
+		ImGui::Text("FrameCount: %i", g_pushConstants.frameCount);
+		ImGui::Text("Elapsed time: %.2f", g_pushConstants.time - g_renderStartTime);
+		ImGui::Text("Seconds per Frame: %.2f", g_UISecondsPerFrame);
+	}
+	ImGui::End();
+
+
+	ImGui::Begin("Cloud File");
+	{
+		ImGui::Text("Current File: %s", g_UICurrentCloudFile.c_str());
+		ImGui::InputText("", g_UICloudFile, 1024);
+		ImGui::SameLine();
+		if (ImGui::Button("Load"))
+		{
+			LoadCloudFile(std::string(g_UICloudFile));
+		}
+	}
+	ImGui::End();
+
+	ImGui::Begin("Settings");
+	{
+		ImGui::Text("Parameters");
+		ImGui::SliderFloat("Henyey-Greenstein G ", &g_UIPhaseG, -1, 1);
+
+		ImGui::Separator();
+
+		ImGui::Text("Camera");
+		ImGui::InputFloat3("Position ", &g_cameraProperties.position[0], 2);
+		ImGui::InputFloat2("Rotation ", &g_UICameraRotate[0], 2);
+
+		ImGui::Separator();
+
+		ImGui::Text("Lighting");
+		ImGui::InputFloat3("Direction ", &g_UILightDirection[0], 2);
+		ImGui::SliderFloat("Intensity ", &g_parameters.lightIntensity, 0, 10);
+
+		ImGui::Separator();
+		ImGui::Text("Cloud");
+		ImGui::SliderFloat("Density", &g_cloudProperties.densityScaling, 0, 1000);
+
+		if (ImGui::Button("Apply"))
+		{
+			// Update data in memory
+			g_parameters.SetPhaseG(g_UIPhaseG);
+			g_cameraProperties.SetRotation(g_UICameraRotate);
+
+			g_parametersBuffer->SetData();
+			g_cameraPropertiesBuffer->SetData();
+			g_cloudPropertiesBuffer->SetData();
+
+			g_pushConstants.frameCount = 0;
+			g_renderStartTime = g_pushConstants.time;
+
+			// Wait for all frames to finish
+			vkDeviceWaitIdle(g_device->GetDevice());
+
+			// Update sets in gpu
+			auto parameterInfo = initializers::DescriptorBufferInfo(g_cameraPropertiesBuffer->GetBuffer(), 0, g_cameraPropertiesBuffer->GetSize());
+			auto cameraPropertiesInfo = initializers::DescriptorBufferInfo(g_parametersBuffer->GetBuffer(), 0, g_parametersBuffer->GetSize());
+			auto cloudBufferInfo = initializers::DescriptorBufferInfo(g_cloudPropertiesBuffer->GetBuffer(), 0, g_cloudPropertiesBuffer->GetSize());
+			std::vector<VkWriteDescriptorSet> writes;
+			for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+			{
+				writes.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &parameterInfo));
+				writes.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
+				writes.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &cameraPropertiesInfo));
+			};
+			vkUpdateDescriptorSets(g_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+
+			UpdateShadowVolume();
+		}
+	}
 	ImGui::End();
 
 	ImGui::Render();
@@ -500,20 +621,6 @@ void DrawFrame()
 
 	// Mark the image as now being in use by this frame
 	g_imagesInFlight[imageIndex] = g_inFlightFences[g_currentFrame].GetFence();
-
-	// Update camera buffer and parameters buffer
-	g_cameraPropertiesBuffer->SetData();
-	g_parametersBuffer->SetData();
-
-	// Update camera properties and parameters in GPU
-	g_computeDescriptorPool->GetDescriptorSets();
-	auto parameterInfo = initializers::DescriptorBufferInfo(g_cameraPropertiesBuffer->GetBuffer(), 0, g_cameraPropertiesBuffer->GetSize());
-	auto cameraPropertiesInfo = initializers::DescriptorBufferInfo(g_parametersBuffer->GetBuffer(), 0, g_parametersBuffer->GetSize());
-	std::vector<VkWriteDescriptorSet> writes{
-		initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[g_currentFrame], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &parameterInfo),
-		initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[g_currentFrame], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &cameraPropertiesInfo)
-	};
-	vkUpdateDescriptorSets(g_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
 	// Record commands
 	RecordComputeCommands(imageIndex);
@@ -562,14 +669,9 @@ void RenderLoop()
 	while (!glfwWindowShouldClose(g_window))
 	{
 		glfwPollEvents();
-
 		UpdateTime();
-		if (g_isShadowVolumeDirty)
-		{
-			UpdateShadowVolume();
-		}
-
 		g_pushConstants.seed = std::rand();
+
 		if (!glfwGetWindowAttrib(g_window, GLFW_ICONIFIED))
 		{
 			DrawUI();
@@ -587,8 +689,7 @@ void RenderLoop()
 void FramebufferResizeCallback(GLFWwindow* window, int width, int height)
 {
 	g_framebufferResized = true;
-	g_cameraProperties.width = width;
-	g_cameraProperties.height = height;
+	g_cameraProperties.SetResolution(width, height);
 }
 
 
@@ -643,9 +744,12 @@ void AllocateShaderResources()
 	g_shadowVolumeImageView = new VulkanImageView(g_device, g_shadowVolumeImage);
 	g_shadowVolumeSampler = new VulkanSampler(g_device);
 
-	// Transfer cloud data to device image and make it readable by the shader
+
+	g_cameraPropertiesBuffer->SetData();
+	g_parametersBuffer->SetData();
 	g_cloudPropertiesBuffer->SetData();
 
+	// Transfer cloud data to device image and make it readable by the shader
 	VulkanBuffer stagingBuffer(g_device, g_cloudData->GetData(), g_cloudData->GetElementSize(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, g_cloudData->GetSize());
 	stagingBuffer.SetData();
 
@@ -657,18 +761,28 @@ void AllocateShaderResources()
 
 	vkDeviceWaitIdle(g_device->GetDevice());
 
-	// Update static descriptor sets
+	// Update descriptor sets
 	std::vector<VkWriteDescriptorSet> cloudSetWrites;
+	auto parameterInfo = initializers::DescriptorBufferInfo(g_cameraPropertiesBuffer->GetBuffer(), 0, g_cameraPropertiesBuffer->GetSize());
+	auto cameraPropertiesInfo = initializers::DescriptorBufferInfo(g_parametersBuffer->GetBuffer(), 0, g_parametersBuffer->GetSize());
 	auto shadowImageInfo = initializers::DescriptorImageInfo(g_shadowVolumeSampler->GetSampler(), g_shadowVolumeImageView->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 	auto cloudImageInfo = initializers::DescriptorImageInfo(g_cloudSampler->GetSampler(), g_cloudImageView->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 	auto cloudBufferInfo = initializers::DescriptorBufferInfo(g_cloudPropertiesBuffer->GetBuffer(), 0, g_cloudPropertiesBuffer->GetSize());
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
+		cloudSetWrites.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &parameterInfo));
 		cloudSetWrites.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo));
 		cloudSetWrites.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
+		cloudSetWrites.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &cameraPropertiesInfo));
 		cloudSetWrites.push_back(initializers::WriteDescriptorSet(g_pathTracerDescriptorSets[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &shadowImageInfo));
 	};
 	vkUpdateDescriptorSets(g_device->GetDevice(), static_cast<uint32_t>(cloudSetWrites.size()), cloudSetWrites.data(), 0, nullptr);
+
+
+	// Update camera properties
+	std::vector<VkWriteDescriptorSet> writes{
+	};
+	vkUpdateDescriptorSets(g_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
 	shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 	std::vector<VkWriteDescriptorSet> shadowVolumeWrites
@@ -829,7 +943,7 @@ bool InitializeGLFW()
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
-	g_window = glfwCreateWindow(g_cameraProperties.width, g_cameraProperties.height, "Cloud Renderer", nullptr, nullptr);
+	g_window = glfwCreateWindow(g_cameraProperties.GetWidth(), g_cameraProperties.GetHeight(), "Cloud Renderer", nullptr, nullptr);
 	glfwSetFramebufferSizeCallback(g_window, FramebufferResizeCallback);
 
 	std::cout << "OK" << std::endl;
@@ -838,53 +952,21 @@ bool InitializeGLFW()
 
 int main()
 {
-#ifdef _DEBUG
-	tests::RunTests();
-#endif
-
+	// Seed random
 	std::srand(static_cast<unsigned int>(std::time(nullptr)));
 
-	// Load cloud from a file
-	std::cout << "Loading cloud file...";
+#ifdef _DEBUG
+	tests::RunTests();
+	LoadCloudFile("cloud-1940.xyz");
+#else
+	g_cloudData = new Grid3D<float>(100, 100, 100, .01, .01, .01);
+	SetCloudProperties(g_cloudData);
+#endif
 
-	g_cloudData = Grid3D<float>::Load("../models/cloud-1940.xyz");
-	//cloudData = new Grid3D<float>(2, 2, 2, 200, 200, 200);
-	//std::vector<float> testData =
-	//{ 1, 0, 0, 0,
-	//	0, 0, 0, 0 };
-	//cloudData->Copy(testData.data(), testData.size() * sizeof(float));
-
-	g_cloudProperties.baseScaling = 1000;
-	g_cloudProperties.densityScaling = 200;
-	glm::vec3 cloudSize{
-		g_cloudData->GetVoxelSize().x * g_cloudData->GetVoxelCount().x * g_cloudProperties.baseScaling,
-		g_cloudData->GetVoxelSize().y * g_cloudData->GetVoxelCount().y * g_cloudProperties.baseScaling,
-		g_cloudData->GetVoxelSize().z * g_cloudData->GetVoxelCount().z * g_cloudProperties.baseScaling };
-
-	g_cloudProperties.maxExtinction = g_cloudData->GetMajorant();
-	g_cloudProperties.voxelCount = glm::uvec4(g_cloudData->GetVoxelCount(), 0);
-	g_cloudProperties.bounds[0] = glm::vec4(
-		-cloudSize.x / 2,
-		-cloudSize.y / 2,
-		0,
-		0
-	);
-	g_cloudProperties.bounds[1] = -g_cloudProperties.bounds[0] + glm::vec4(0, 0, cloudSize.z, 0);
-
-	std::cout << "OK" << std::endl;
-
-	g_parameters.SetPhaseG(0);
-	g_parameters.lightIntensity = 2;
-
-	g_cameraProperties.position = glm::vec3(0, 50, -500);
-
-	g_lightDirection = glm::vec3(1, -1, 0);
-	//lightDirection = glm::vec3(0.328f, -1, 0);
-	//lightDirection = glm::vec3(0, -1, 0);
-
-	// Initialize GLFW
+	// Initialize Framework
 	InitializeGLFW();
 	InitializeVulkan();
+	UpdateShadowVolume();
 
 	RenderLoop();
 

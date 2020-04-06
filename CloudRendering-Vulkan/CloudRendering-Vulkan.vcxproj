@@ -225,6 +225,7 @@ call ".\Compile.bat"</Command>
     </ClCompile>
     <ClCompile Include="SwapchainSupportDetails.cpp" />
     <ClCompile Include="Tests.cpp" />
+    <ClCompile Include="Utilities.cpp" />
     <ClCompile Include="Validation.cpp" />
     <ClCompile Include="VulkanBuffer.cpp" />
     <ClCompile Include="VulkanBufferView.cpp" />
@@ -258,6 +259,7 @@ call ".\Compile.bat"</Command>
     <ClInclude Include="SwapchainSupportDetails.h" />
     <ClInclude Include="Tests.h" />
     <ClInclude Include="UniformBuffers.h" />
+    <ClInclude Include="Utilities.h" />
     <ClInclude Include="Validation.h" />
     <ClInclude Include="VulkanBuffer.h" />
     <ClInclude Include="VulkanBufferView.h" />

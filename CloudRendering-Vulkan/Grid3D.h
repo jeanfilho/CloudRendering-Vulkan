@@ -52,6 +52,10 @@ inline Grid3D<T>* Grid3D<T>::Load(const std::string& filename)
 	double voxelSizeZ = 0;
 
 	std::ifstream in(filename, std::ifstream::in | std::ifstream::binary);
+	if (!in.good())
+	{
+		return nullptr;
+	}
 
 
 	in.read(reinterpret_cast<char*>(&sizeX), sizeof(unsigned int));
