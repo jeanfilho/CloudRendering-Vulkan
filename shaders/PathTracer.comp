@@ -14,13 +14,27 @@ struct Ray
 //---------------------------------------------------------
 // Constants
 //---------------------------------------------------------
-const vec4 TOP_SKY_COLOR = vec4(0.01f, 0.1f, 0.8f, 1.0f);
-const vec4 BOTTOM_SKY_COLOR = vec4(0.1f, 0.3f, 1.0f, 1.0f);
 const vec4 SUNLIGHT_COLOR = vec4(1.0f);
 const float PI = 3.14159265359;
 const float INV_4Pi = 1.0f/(4.0f * PI);
 const float FLT_MAX = 3.402823466e+38;
 const float FLT_MIN = 1.175494351e-38;
+const vec4 BG_COLORS[5] = 
+    {
+        vec4(0.00f, 0.0f, 0.02f, 1.0f), // HORIZON GROUND DARKER BLUE
+        vec4(0.01f, 0.05f, 0.2f, 1.0f), // HORIZON GROUND DARK BLUE
+        vec4(0.7f, 0.9f, 1.0f, 1.0f), // HORIZON SKY WHITE
+        vec4(0.1f, 0.3f, 1.0f, 1.0f),  // SKY LIGHT BLUE
+        vec4(0.01f, 0.1f, 0.7f, 1.0f)  // SKY BLUE
+    };
+const float BG_DISTS[5] = 
+{
+    -1.0f,
+    -0.04f,
+    0.0f,
+    0.5f,
+    1.0f
+};
 
 //---------------------------------------------------------
 // Descriptor Set
@@ -88,8 +102,13 @@ layout (push_constant) uniform PushConstants
 //---------------------------------------------------------
 vec4 sampleBackground(in vec3 dir)
 {
-    float value = (dot(dir, vec3(0,1,0)) + 1.f)/2.f;
-    return value * TOP_SKY_COLOR + (1 - value) * BOTTOM_SKY_COLOR;
+    float dist = dir.y;
+    lowp vec4 col = BG_COLORS[0];
+    for (int i=1; i < 5; ++i)
+    {
+        col = mix(col, BG_COLORS[i], smoothstep(BG_DISTS[i-1], BG_DISTS[i], dist));
+    }
+    return col;
 }
 
 vec4 sampleCloud(in vec3 pos)
