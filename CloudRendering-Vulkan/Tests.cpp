@@ -26,6 +26,8 @@ void tests::RunTests()
 
 	shadowVolumeTest(glm::ivec2(shadowVolumeProperties.voxelAxisCount) / 2, shadowVolumeProperties, cloudProperties);
 
+
+
 	bool test = true;
 }
 

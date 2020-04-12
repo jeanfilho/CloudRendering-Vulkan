@@ -216,6 +216,7 @@ call ".\Compile.bat"</Command>
     </ClCompile>
     <ClCompile Include="ImGUILayer.cpp" />
     <ClCompile Include="Initializers.cpp" />
+    <ClCompile Include="KDTree.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
@@ -254,6 +255,7 @@ call ".\Compile.bat"</Command>
     <ClInclude Include="Grid3D.h" />
     <ClInclude Include="ImGUILayer.h" />
     <ClInclude Include="Initializers.h" />
+    <ClInclude Include="KDTree.h" />
     <ClInclude Include="QueueFamilyIndices.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="SwapchainSupportDetails.h" />

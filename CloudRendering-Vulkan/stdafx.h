@@ -26,6 +26,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
+#include <glm/gtx/norm.hpp>
 
 #include "Validation.h"
 #include "Initializers.h"

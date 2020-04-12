@@ -1007,6 +1007,11 @@ int main()
 	// Seed random
 	std::srand(static_cast<unsigned int>(std::time(nullptr)));
 
+#ifdef _DEBUG
+	tests::RunTests();
+#endif
+
+	// Create default data
 	g_cloudData = new Grid3D<float>(100, 100, 100, .01, .01, .01);
 	SetCloudProperties(g_cloudData);
 	g_cameraProperties.SetFOV(g_UIFov);

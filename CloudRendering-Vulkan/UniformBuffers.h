@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include "Tests.h"
 
 struct CameraProperties
 {
@@ -99,6 +100,7 @@ public:
 struct ShadowVolumeProperties
 {
 	friend glm::vec3 tests::calculateVoxelPosition(glm::uvec3 voxelIdx, ShadowVolumeProperties& shadowVolumeProperties);
+
 private:
 	glm::vec4 bounds[2]{ glm::vec4(0), glm::vec4(0) };
 	glm::vec4 lightDirection{ 1, -1, 0, 0 };
@@ -148,4 +150,13 @@ private:
 
 		basisChange = glm::inverse(glm::mat4{ right, up, lightDirection, glm::vec4(0,0,0,1) });
 	}
+};
+
+// Jarosz et al. - 2008 - Advanced Global Illumination using Photon Maps
+struct Photon
+{
+	glm::vec3 position;	// Position
+	char power[4];		// Power packed as 4 chars
+	char phi, theta;	// Compressed incident direction
+	short flag;			// Flag used in kdtree
 };
