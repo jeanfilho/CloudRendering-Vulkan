@@ -28,7 +28,6 @@ void KDTree::Balance(size_t begin, size_t end)
 	// Swap photon position to build the heap
 	size_t median = begin + (end - begin) / 2;
 	//m_sortedPhotons[position] = m_photons[median];
-	m_axes[begin];
 
 	// Build subtrees
 	Balance(begin, median);

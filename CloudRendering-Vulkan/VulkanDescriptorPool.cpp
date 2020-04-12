@@ -2,6 +2,7 @@
 #include "VulkanDescriptorPool.h"
 
 #include "VulkanDevice.h"
+#include "RenderTechnique.h"
 
 VulkanDescriptorPool::VulkanDescriptorPool(VulkanDevice* device, std::vector<VkDescriptorPoolSize>& poolSizes, uint32_t maxSets /* = UINT32_MAX*/)
 {
@@ -17,6 +18,26 @@ VulkanDescriptorPool::~VulkanDescriptorPool()
 	{
 		Clear();
 		vkDestroyDescriptorPool(m_device->GetDevice(), m_pool, nullptr);
+	}
+}
+
+void VulkanDescriptorPool::AllocateSets(RenderTechnique* renderTechnique, unsigned int setCount /* = 1*/)
+{
+	std::vector<VkDescriptorSetLayout> setLayouts;
+	for (unsigned int i = 0; i < setCount; i++)
+	{
+		renderTechnique->GetDescriptorSetLayout(setLayouts);
+	}
+	
+	auto& techniqueSets = renderTechnique->m_descriptorSets;
+	techniqueSets.resize(setLayouts.size());
+
+	VkDescriptorSetAllocateInfo setsInfo = initializers::DescriptorSetAllocateInfo(m_pool, setLayouts.data(), static_cast<uint32_t>(setLayouts.size()));
+	ValidCheck(vkAllocateDescriptorSets(m_device->GetDevice(), &setsInfo, techniqueSets.data()));
+
+	for (auto& set : techniqueSets)
+	{
+		m_sets.push_back(set);
 	}
 }
 

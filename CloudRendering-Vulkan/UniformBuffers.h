@@ -3,6 +3,13 @@
 #include <glm/glm.hpp>
 #include "Tests.h"
 
+struct PushConstants
+{
+	double  time = 0;
+	int seed = 100;
+	unsigned int frameCount = 0;
+};
+
 struct CameraProperties
 {
 	glm::vec3 position = glm::vec3(0, 0, -800);
@@ -25,11 +32,11 @@ public:
 		utilities::GetOrthonormalBasis(forward, right, up);
 	}
 
-	int GetWidth()
+	int GetWidth() const
 	{
 		return halfWidth * 2;
 	}
-	int GetHeight()
+	int GetHeight() const
 	{
 		return halfHeight * 2;
 	}
@@ -157,6 +164,12 @@ struct Photon
 {
 	glm::vec3 position;	// Position
 	char power[4];		// Power packed as 4 chars
-	char phi, theta;	// Compressed incident direction
-	short flag;			// Flag used in kdtree
+	char phi;			// Compressed incident direction
+	char theta;			// Compressed incident direction
+};
+
+struct PhotonEntry
+{
+	Photon photon;		// Surviving Photon
+	glm::uint32 count;	// Number of hash collisions
 };

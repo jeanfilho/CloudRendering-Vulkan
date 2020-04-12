@@ -1,6 +1,7 @@
 #pragma once
 
 class VulkanDevice;
+class RenderTechnique;
 
 class VulkanDescriptorPool
 {
@@ -9,6 +10,7 @@ public:
 	~VulkanDescriptorPool();
 
 	void AllocateSets(std::vector<VkDescriptorSetLayout>& setLayouts, std::vector<VkDescriptorSet>& outSets);
+	void AllocateSets(RenderTechnique* renderTechnique, unsigned int setCount = 1);
 	void Clear();
 
 	std::vector<VkDescriptorSet>& GetDescriptorSets();

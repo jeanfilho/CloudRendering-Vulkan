@@ -218,6 +218,8 @@ call ".\Compile.bat"</Command>
     <ClCompile Include="Initializers.cpp" />
     <ClCompile Include="KDTree.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="RenderTechnique.cpp" />
+    <ClCompile Include="RenderTechniquePT.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
@@ -257,6 +259,8 @@ call ".\Compile.bat"</Command>
     <ClInclude Include="Initializers.h" />
     <ClInclude Include="KDTree.h" />
     <ClInclude Include="QueueFamilyIndices.h" />
+    <ClInclude Include="RenderTechnique.h" />
+    <ClInclude Include="RenderTechniquePT.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="SwapchainSupportDetails.h" />
     <ClInclude Include="Tests.h" />
