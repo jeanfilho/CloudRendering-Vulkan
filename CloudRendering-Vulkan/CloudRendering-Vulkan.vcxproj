@@ -220,6 +220,7 @@ call ".\Compile.bat"</Command>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="RenderTechnique.cpp" />
     <ClCompile Include="RenderTechniquePT.cpp" />
+    <ClCompile Include="RenderTechniqueSV.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
@@ -261,6 +262,7 @@ call ".\Compile.bat"</Command>
     <ClInclude Include="QueueFamilyIndices.h" />
     <ClInclude Include="RenderTechnique.h" />
     <ClInclude Include="RenderTechniquePT.h" />
+    <ClInclude Include="RenderTechniqueSV.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="SwapchainSupportDetails.h" />
     <ClInclude Include="Tests.h" />

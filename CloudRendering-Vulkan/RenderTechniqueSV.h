@@ -2,15 +2,13 @@
 
 #include "RenderTechnique.h"
 
-/*
- * Path Tracing render technique
- */
-class RenderTechniquePT : public RenderTechnique
+class VulkanSampler;
+
+class RenderTechniqueSV : public RenderTechnique
 {
 public:
-	RenderTechniquePT(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties);
-	~RenderTechniquePT();
-
+	RenderTechniqueSV(VulkanDevice* device, const ShadowVolumeProperties* shadowVolumeProperties);
+	~RenderTechniqueSV();
 
 	virtual void SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain) override;
 	virtual void ClearFrameResources() override;
@@ -20,17 +18,18 @@ public:
 	virtual void QueueUpdateCameraProperties(VkDescriptorBufferInfo& cameraBufferInfo, unsigned int frameNr) override;
 	virtual void QueueUpdateParameters(VkDescriptorBufferInfo& parametersBufferInfo, unsigned int frameNr) override;
 	virtual void QueueUpdateShadowVolume(VkDescriptorBufferInfo& shadowVolumeBufferInfo, unsigned int frameNr) override;
-	virtual void QueueUpdateShadowVolumeSampler(VkDescriptorImageInfo& shadowVolumeImageInfo, unsigned int frameNr) override;
+	virtual void QueueUpdateShadowVolumeSampler(VkDescriptorImageInfo& shadowVolumeBufferInfo, unsigned int frameNr) override;
 
 	virtual uint32_t GetRequiredSetCount() const override;
-	virtual void GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& outPoolSizes) const override;	
+	virtual void GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& outPoolSizes) const override;
 
 	virtual void RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex) override;
 
 private:
 	VulkanShaderModule* m_shader = nullptr;
-	const CameraProperties* m_cameraProperties = nullptr;
-	VulkanSwapchain* m_swapchain = nullptr;
-	std::vector<VulkanImage*> m_images;
-	std::vector<VulkanImageView*> m_imageViews;
+	const ShadowVolumeProperties* m_shadowVolumeProperties = nullptr;
+
+	VulkanSampler* m_cloudSampler = nullptr;
+	VulkanImage* m_image = nullptr;
+	VulkanImageView* m_imageView = nullptr;
 };

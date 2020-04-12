@@ -19,6 +19,9 @@
     <Filter Include="Source Files\imgui">
       <UniqueIdentifier>{182ef550-164d-49f5-8264-f811786e4220}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\RenderTechniques">
+      <UniqueIdentifier>{b49e5a08-a776-46d6-95fd-52c1aefc8519}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -138,6 +141,9 @@
     <ClCompile Include="RenderTechnique.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="RenderTechniqueSV.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Initializers.h">
@@ -243,10 +249,13 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="RenderTechnique.h">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\RenderTechniques</Filter>
     </ClInclude>
     <ClInclude Include="RenderTechniquePT.h">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\RenderTechniques</Filter>
+    </ClInclude>
+    <ClInclude Include="RenderTechniqueSV.h">
+      <Filter>Header Files\RenderTechniques</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

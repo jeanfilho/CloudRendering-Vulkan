@@ -15,6 +15,7 @@
 #include "VulkanDescriptorPool.h"
 
 #include "RenderTechniquePT.h"
+#include "RenderTechniqueSV.h"
 #include "Grid3D.h"
 #include "Tests.h"
 #include "ImGUILayer.h"
@@ -41,6 +42,7 @@ PushConstants g_pushConstants;
 // Globals
 //--------------------------------------------------------------
 RenderTechnique* g_renderTechnique;
+RenderTechniqueSV* g_shadowVolumeTechnique;
 
 VulkanInstance* g_instance;
 VulkanPhysicalDevice* g_physicalDevice;
@@ -60,14 +62,12 @@ VulkanImage* g_cloudImage;
 VulkanImageView* g_cloudImageView;
 VulkanSampler* g_cloudSampler;
 
-VulkanPipelineLayout* g_shadowVolumePipelineLayout;
-VulkanComputePipeline* g_shadowVolumePipeline;
-VulkanShaderModule* g_shadowVolumeShader;
-VulkanDescriptorSetLayout* g_shadowVolumeDescriptorSetLayout;
-std::vector<VkDescriptorSet> g_shadowVolumeDescriptorSets;
 VulkanImage* g_shadowVolumeImage;
 VulkanImageView* g_shadowVolumeImageView;
 VulkanSampler* g_shadowVolumeSampler;
+
+std::vector<VulkanImage*> g_resultImages;
+std::vector<VulkanImageView*> g_resultImageViews;
 
 ImGUILayer* g_imguiLayer = nullptr;
 
@@ -166,19 +166,6 @@ void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
 	std::cout << "Button pressed";
 }
 
-void RecordShadowVolumeUpdateCommands(VkCommandBuffer& commandBuffer)
-{
-	utilities::CmdTransitionImageLayout(commandBuffer, g_shadowVolumeImage->GetImage(), g_shadowVolumeImage->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-
-	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, g_shadowVolumePipeline->GetPipeline());
-
-	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, g_shadowVolumePipelineLayout->GetPipelineLayout(), 0, static_cast<uint32_t>(g_shadowVolumeDescriptorSets.size()), g_shadowVolumeDescriptorSets.data(), 0, nullptr);
-
-	vkCmdDispatch(commandBuffer, g_shadowVolumeProperties.voxelAxisCount, g_shadowVolumeProperties.voxelAxisCount, 1);
-
-	utilities::CmdTransitionImageLayout(commandBuffer, g_shadowVolumeImage->GetImage(), g_shadowVolumeImage->GetFormat(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-}
-
 void RecordComputeCommands(uint32_t imageIndex)
 {
 	VkCommandBuffer& commandBuffer = g_computeCommandPool->GetCommandBuffers()[g_currentFrame];
@@ -194,7 +181,7 @@ void RecordComputeCommands(uint32_t imageIndex)
 	vkCmdPushConstants(commandBuffer, g_renderTechnique->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &g_pushConstants);;
 
 	// Record technique commands
-	g_renderTechnique->RecordDrawCommands(commandBuffer, swapchainImage, g_swapchain->GetImageFormat());
+	g_renderTechnique->RecordDrawCommands(commandBuffer, g_currentFrame, imageIndex);
 
 	// Change swapchain image layout back to present
 	utilities::CmdTransitionImageLayout(commandBuffer, swapchainImage, g_swapchain->GetImageFormat(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
@@ -279,12 +266,9 @@ void UpdateCloudData()
 		}
 		g_renderTechnique->UpdateDescriptorSets();
 
-		std::vector<VkWriteDescriptorSet> writes
-		{
-			initializers::WriteDescriptorSet(g_shadowVolumeDescriptorSets[0], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo),
-			initializers::WriteDescriptorSet(g_shadowVolumeDescriptorSets[0], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo)
-		};
-		vkUpdateDescriptorSets(g_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+		g_shadowVolumeTechnique->QueueUpdateCloudData(cloudBufferInfo, 0);
+		g_shadowVolumeTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, 0);
+		g_shadowVolumeTechnique->UpdateDescriptorSets();
 	}
 
 	g_pushConstants.frameCount = 0;
@@ -299,15 +283,15 @@ void UpdateShadowVolume()
 
 	// Update shadow volume descriptor set
 	auto bufferInfo = initializers::DescriptorBufferInfo(g_shadowVolumePropertiesBuffer->GetBuffer(), 0, g_shadowVolumePropertiesBuffer->GetSize());
-	VkWriteDescriptorSet write = initializers::WriteDescriptorSet(g_shadowVolumeDescriptorSets[0], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &bufferInfo);
-	vkUpdateDescriptorSets(g_device->GetDevice(), 1, &write, 0, nullptr);
+	g_shadowVolumeTechnique->QueueUpdateShadowVolume(bufferInfo, 0);
+	g_shadowVolumeTechnique->UpdateDescriptorSets();
 
 	// Wait until any calculations are done
 	vkQueueWaitIdle(g_device->GetComputeQueue());
 
 	// Send commands for updating volume
 	VkCommandBuffer commandBuffer = utilities::BeginSingleTimeCommands(g_device, g_computeCommandPool);
-	RecordShadowVolumeUpdateCommands(commandBuffer);
+	g_shadowVolumeTechnique->RecordDrawCommands(commandBuffer, 0, 0);
 	utilities::EndSingleTimeCommands(g_device, g_computeCommandPool, commandBuffer);
 
 	// Update render technique descriptor set
@@ -342,6 +326,16 @@ void ClearSwapchain()
 	delete g_swapchain;
 	g_swapchain = nullptr;
 
+	// Recreate result images
+	for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		delete g_resultImages[i];
+		delete g_resultImageViews[i];
+
+		g_resultImages[i] = nullptr;
+		g_resultImageViews[i] = nullptr;
+	}
+
 	std::cout << "OK" << std::endl;
 }
 
@@ -373,7 +367,16 @@ void CreateSwapchain()
 	}
 
 	// Compute result image and view
-	g_renderTechnique->CreateFrameResources();
+	for (unsigned int i = 0; i < g_resultImages.size(); i++)
+	{
+		g_resultImages[i] = new VulkanImage(g_device,
+			VK_FORMAT_R32G32B32A32_SFLOAT,
+			VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
+			static_cast<uint32_t>(g_cameraProperties.GetWidth()),
+			static_cast<uint32_t>(g_cameraProperties.GetHeight()));
+		g_resultImageViews[i] = new VulkanImageView(g_device, g_resultImages[i]);
+	}
+	g_renderTechnique->SetFrameResources(g_resultImages, g_resultImageViews, g_swapchain);
 
 	// Recreate command buffers
 	g_computeCommandPool->AllocateCommandBuffers(g_swapchain->GetSwapchainImages().size());
@@ -392,7 +395,6 @@ void CreateSwapchain()
 
 void Clear()
 {
-
 	delete g_imguiLayer;
 
 	ClearSwapchain();
@@ -406,14 +408,11 @@ void Clear()
 	delete g_graphicsCommandPool;
 
 	// Shadow Volume
-	delete g_shadowVolumePipeline;
-	delete g_shadowVolumePipelineLayout;
-	delete g_shadowVolumeShader;
-	delete g_shadowVolumeDescriptorSetLayout;
-	delete g_shadowVolumeImage;
-	delete g_shadowVolumeImageView;
-	delete g_shadowVolumeSampler;
+	delete g_shadowVolumeTechnique;
 	delete g_shadowVolumePropertiesBuffer;
+	delete g_shadowVolumeImageView;
+	delete g_shadowVolumeImage;
+	delete g_shadowVolumeSampler;
 
 	// Cloud Memory Allocations
 	delete g_cloudImageView;
@@ -654,87 +653,7 @@ void InitializeImGUI()
 
 void CreateRenderTechnique()
 {
-	g_renderTechnique = new RenderTechniquePT(g_device, &g_cameraProperties);
-}
-
-void AllocateShaderResources()
-{
-
-	// Shader Modules
-	std::vector<char> shadowVolumeSPV;
-	utilities::ReadFile("../shaders/ShadowVolume.comp.spv", shadowVolumeSPV);
-	g_shadowVolumeShader = new VulkanShaderModule(g_device, shadowVolumeSPV);
-
-	// Buffers & Images
-	g_cameraPropertiesBuffer = new VulkanBuffer(g_device, &g_cameraProperties, sizeof(CameraProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-	g_cloudPropertiesBuffer = new VulkanBuffer(g_device, &g_cloudProperties, sizeof(CloudProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-	g_parametersBuffer = new VulkanBuffer(g_device, &g_parameters, sizeof(Parameters), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-
-	g_shadowVolumePropertiesBuffer = new VulkanBuffer(g_device, &g_shadowVolumeProperties, sizeof(ShadowVolumeProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-	g_shadowVolumeImage = new VulkanImage(g_device, VK_FORMAT_R32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, g_shadowVolumeProperties.voxelAxisCount, g_shadowVolumeProperties.voxelAxisCount, g_shadowVolumeProperties.voxelAxisCount);
-	g_shadowVolumeImageView = new VulkanImageView(g_device, g_shadowVolumeImage);
-	g_shadowVolumeSampler = new VulkanSampler(g_device);
-
-	g_cameraPropertiesBuffer->SetData();
-	g_parametersBuffer->SetData();
-
-	// Transfer cloud data to device image and make it readable by the shader
-	UpdateCloudData();
-
-	// Update descriptor sets
-	auto parameterInfo = initializers::DescriptorBufferInfo(g_cameraPropertiesBuffer->GetBuffer(), 0, g_cameraPropertiesBuffer->GetSize());
-	auto cameraPropertiesInfo = initializers::DescriptorBufferInfo(g_parametersBuffer->GetBuffer(), 0, g_parametersBuffer->GetSize());
-	auto shadowImageInfo = initializers::DescriptorImageInfo(g_shadowVolumeSampler->GetSampler(), g_shadowVolumeImageView->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-	for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-	{
-		g_renderTechnique->QueueUpdateParameters(parameterInfo, i);
-		g_renderTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
-		g_renderTechnique->QueueUpdateShadowVolumeSampler(shadowImageInfo, i);
-	}
-	g_renderTechnique->UpdateDescriptorSets();
-
-	shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-	std::vector<VkWriteDescriptorSet> shadowVolumeWrites
-	{
-		initializers::WriteDescriptorSet(g_shadowVolumeDescriptorSets[0], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &shadowImageInfo)
-	};
-	vkUpdateDescriptorSets(g_device->GetDevice(), static_cast<uint32_t>(shadowVolumeWrites.size()), shadowVolumeWrites.data(), 0, nullptr);
-}
-
-void AllocatePipelines()
-{
-	// Shadow volume pipeline;
-	std::vector<VkPushConstantRange> svPushConstantRanges;
-	std::vector<VkDescriptorSetLayout> svSetLayouts{ g_shadowVolumeDescriptorSetLayout->GetLayout() };
-	g_shadowVolumePipelineLayout = new VulkanPipelineLayout(g_device, svSetLayouts, svPushConstantRanges);
-	g_shadowVolumePipeline = new VulkanComputePipeline(g_device, g_shadowVolumePipelineLayout, g_shadowVolumeShader);
-
-	// Create swapchain
-	CreateSwapchain();
-	if (!g_imguiLayer)
-	{
-		InitializeImGUI();
-	}
-
-	// Create framebuffers for ImGUI
-	g_framebuffers.resize(g_swapchainImageViews.size());
-	for (size_t i = 0; i < g_framebuffers.size(); i++)
-	{
-		g_framebuffers[i] = new VulkanFramebuffer(g_device, g_imguiLayer->GetRenderPass(), &g_swapchainImageViews[i], g_swapchain);
-	}
-
-	// Semaphores (GPU-GPU) and Fences (CPU-GPU)
-	g_imageAvailableSemaphores.reserve(MAX_FRAMES_IN_FLIGHT);
-	g_renderFinishedSemaphores.reserve(MAX_FRAMES_IN_FLIGHT);
-	g_inFlightFences.reserve(MAX_FRAMES_IN_FLIGHT);
-	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-	{
-		g_imageAvailableSemaphores.emplace_back(g_device);
-		g_renderFinishedSemaphores.emplace_back(g_device);
-		g_inFlightFences.emplace_back(g_device);
-	}
-	g_imagesInFlight.resize(g_swapchain->GetSwapchainImages().size(), VK_NULL_HANDLE);
+	g_renderTechnique = new RenderTechniquePT(g_device, g_swapchain, &g_cameraProperties);
 }
 
 bool InitializeVulkan()
@@ -767,20 +686,24 @@ bool InitializeVulkan()
 	g_computeCommandPool = new VulkanCommandPool(g_device, g_physicalDevice->GetQueueFamilyIndices().computeFamily);
 	g_graphicsCommandPool = new VulkanCommandPool(g_device, g_physicalDevice->GetQueueFamilyIndices().graphicsFamily);
 
-	// Shadow Volume Descriptor Set Layout
-	std::vector<VkDescriptorSetLayoutBinding> shadowVolumeLayoutBindings = {
-		// Binding 0: Output 3D image (write)
-		initializers::DescriptorSetLayoutBinding(0, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
-		// Binding 1: Shadow volume properties (read)
-		initializers::DescriptorSetLayoutBinding(1, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
-		// Binding 2: Cloud grid texel buffer (read)
-		initializers::DescriptorSetLayoutBinding(2, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
-		// Binding 3: Cloud Properties (read)
-		initializers::DescriptorSetLayoutBinding(3, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-	};
-	g_shadowVolumeDescriptorSetLayout = new VulkanDescriptorSetLayout(g_device, shadowVolumeLayoutBindings);
+	// Buffers & Images
+	g_cameraPropertiesBuffer = new VulkanBuffer(g_device, &g_cameraProperties, sizeof(CameraProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+	g_cloudPropertiesBuffer = new VulkanBuffer(g_device, &g_cloudProperties, sizeof(CloudProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+	g_parametersBuffer = new VulkanBuffer(g_device, &g_parameters, sizeof(Parameters), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 
-	// Render Technique
+	g_shadowVolumePropertiesBuffer = new VulkanBuffer(g_device, &g_shadowVolumeProperties, sizeof(ShadowVolumeProperties), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+	g_shadowVolumeImage = new VulkanImage(g_device, VK_FORMAT_R32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, g_shadowVolumeProperties.voxelAxisCount, g_shadowVolumeProperties.voxelAxisCount, g_shadowVolumeProperties.voxelAxisCount);
+	g_shadowVolumeImageView = new VulkanImageView(g_device, g_shadowVolumeImage);
+	g_shadowVolumeSampler = new VulkanSampler(g_device);
+
+	g_resultImages.resize(MAX_FRAMES_IN_FLIGHT);
+	g_resultImageViews.resize(MAX_FRAMES_IN_FLIGHT);
+
+	g_cameraPropertiesBuffer->SetData();
+	g_parametersBuffer->SetData();
+
+	// Render Techniques
+	g_shadowVolumeTechnique = new RenderTechniqueSV(g_device, &g_shadowVolumeProperties);
 	CreateRenderTechnique();
 
 	// Compute Descriptor Pool
@@ -795,18 +718,63 @@ bool InitializeVulkan()
 		g_renderTechnique->GetDescriptorPoolSizes(poolSizes);
 	}
 
-	std::vector<VkDescriptorSetLayout> shadowVolumeSetLayouts;
-	shadowVolumeSetLayouts.push_back(g_shadowVolumeDescriptorSetLayout->GetLayout());
-
-	uint32_t requiredSets = shadowVolumeLayoutBindings.size() + g_renderTechnique->GetRequiredSetCount() * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+	uint32_t requiredSets = g_shadowVolumeTechnique->GetRequiredSetCount() + g_renderTechnique->GetRequiredSetCount() * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 	g_computeDescriptorPool = new VulkanDescriptorPool(g_device, poolSizes, requiredSets);
 
 	g_computeDescriptorPool->AllocateSets(g_renderTechnique, MAX_FRAMES_IN_FLIGHT);
-	g_computeDescriptorPool->AllocateSets(shadowVolumeSetLayouts, g_shadowVolumeDescriptorSets);
+	g_computeDescriptorPool->AllocateSets(g_shadowVolumeTechnique, 1);
 
-	// Allocate render pipelines & resources
-	AllocateShaderResources();
-	AllocatePipelines();
+	// Set shadow volume output image
+	std::vector<VulkanImage*> shadowImg{ g_shadowVolumeImage };
+	std::vector<VulkanImageView*> shadowView{ g_shadowVolumeImageView };
+	g_shadowVolumeTechnique->SetFrameResources(shadowImg, shadowView, nullptr);
+
+	// Transfer cloud data to device image and make it readable by the shader
+	UpdateCloudData();
+	UpdateShadowVolume();
+
+	// Update descriptor sets
+	auto parameterInfo = initializers::DescriptorBufferInfo(g_cameraPropertiesBuffer->GetBuffer(), 0, g_cameraPropertiesBuffer->GetSize());
+	auto cameraPropertiesInfo = initializers::DescriptorBufferInfo(g_parametersBuffer->GetBuffer(), 0, g_parametersBuffer->GetSize());
+	auto shadowImageInfo = initializers::DescriptorImageInfo(g_shadowVolumeSampler->GetSampler(), g_shadowVolumeImageView->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+	for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		g_renderTechnique->QueueUpdateParameters(parameterInfo, i);
+		g_renderTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
+		g_renderTechnique->QueueUpdateShadowVolumeSampler(shadowImageInfo, i);
+	}
+	g_renderTechnique->UpdateDescriptorSets();
+
+	shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	g_shadowVolumeTechnique->QueueUpdateShadowVolumeSampler(shadowImageInfo, 0);
+	g_shadowVolumeTechnique->UpdateDescriptorSets();
+
+	// Create swapchain
+	CreateSwapchain();
+	if (!g_imguiLayer)
+	{
+		InitializeImGUI();
+	}
+
+	// Create framebuffers for ImGUI
+	g_framebuffers.resize(g_swapchainImageViews.size());
+	for (size_t i = 0; i < g_framebuffers.size(); i++)
+	{
+		g_framebuffers[i] = new VulkanFramebuffer(g_device, g_imguiLayer->GetRenderPass(), &g_swapchainImageViews[i], g_swapchain);
+	}
+
+	// Semaphores (GPU-GPU) and Fences (CPU-GPU)
+	g_imageAvailableSemaphores.reserve(MAX_FRAMES_IN_FLIGHT);
+	g_renderFinishedSemaphores.reserve(MAX_FRAMES_IN_FLIGHT);
+	g_inFlightFences.reserve(MAX_FRAMES_IN_FLIGHT);
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		g_imageAvailableSemaphores.emplace_back(g_device);
+		g_renderFinishedSemaphores.emplace_back(g_device);
+		g_inFlightFences.emplace_back(g_device);
+	}
+	g_imagesInFlight.resize(g_swapchain->GetSwapchainImages().size(), VK_NULL_HANDLE);
 
 	std::cout << "OK" << std::endl;
 

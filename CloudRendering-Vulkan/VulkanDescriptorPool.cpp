@@ -23,6 +23,11 @@ VulkanDescriptorPool::~VulkanDescriptorPool()
 
 void VulkanDescriptorPool::AllocateSets(RenderTechnique* renderTechnique, unsigned int setCount /* = 1*/)
 {
+	if (setCount == 0)
+	{
+		throw std::logic_error("[VulkanDescriptorPool::AllocateSets] Passed setCount = 0");
+	}
+
 	std::vector<VkDescriptorSetLayout> setLayouts;
 	for (unsigned int i = 0; i < setCount; i++)
 	{
