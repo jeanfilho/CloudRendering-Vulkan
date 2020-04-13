@@ -144,6 +144,9 @@
     <ClCompile Include="RenderTechniqueSV.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="RenderTechniquePPM.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Initializers.h">
@@ -255,6 +258,9 @@
       <Filter>Header Files\RenderTechniques</Filter>
     </ClInclude>
     <ClInclude Include="RenderTechniqueSV.h">
+      <Filter>Header Files\RenderTechniques</Filter>
+    </ClInclude>
+    <ClInclude Include="RenderTechniquePPM.h">
       <Filter>Header Files\RenderTechniques</Filter>
     </ClInclude>
   </ItemGroup>

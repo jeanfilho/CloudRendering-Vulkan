@@ -30,7 +30,6 @@ public:
 
 	void UpdateDescriptorSets();
 
-
 	virtual void SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain) = 0;
 	virtual void ClearFrameResources() = 0;
 

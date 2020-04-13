@@ -1,0 +1,51 @@
+#pragma once
+
+#include "RenderTechnique.h"
+
+class VulkanBuffer;
+
+class RenderTechniquePPM : public RenderTechnique
+{
+public:
+	RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, const PhotonMapProperties* photonMapProperties);
+	~RenderTechniquePPM();
+
+	void AllocatePhotonMap(VulkanBuffer* photonMapPropertiesBuffer);
+	void ClearPhotonMap();
+
+	virtual void SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain);
+	virtual void ClearFrameResources();
+
+	virtual uint32_t GetRequiredSetCount() const;
+	virtual void GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& outPoolSizes) const;
+
+	virtual void QueueUpdateCloudData(VkDescriptorBufferInfo& cloudBufferInfo, unsigned int frameNr);
+	virtual void QueueUpdateCloudDataSampler(VkDescriptorImageInfo& cloudImageInfo, unsigned int frameNr);
+	virtual void QueueUpdateCameraProperties(VkDescriptorBufferInfo& cameraBufferInfo, unsigned int frameNr);
+	virtual void QueueUpdateParameters(VkDescriptorBufferInfo& parametersBufferInfo, unsigned int frameNr);
+	virtual void QueueUpdateShadowVolume(VkDescriptorBufferInfo& shadowVolumeBufferInfo, unsigned int frameNr);
+	virtual void QueueUpdateShadowVolumeSampler(VkDescriptorImageInfo& shadowVolumeImageInfo, unsigned int frameNr);
+
+	virtual void RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex);
+
+private:
+	VulkanShaderModule* m_shader = nullptr;
+
+	VulkanShaderModule* m_ptShader = nullptr;
+	VulkanDescriptorSetLayout* m_ptDescriptorSetLayout = nullptr;
+	VulkanPipelineLayout* m_ptPipelineLayout = nullptr;
+	VulkanComputePipeline* m_ptPipeline = nullptr;
+
+	VulkanImage* m_photonMap = nullptr;
+	VulkanImageView* m_photonMapView = nullptr;
+
+	VulkanImage* m_collisionMap = nullptr;
+	VulkanImageView* m_collisionMapView = nullptr;
+
+	const CameraProperties* m_cameraProperties = nullptr;
+	const PhotonMapProperties* m_photonMapProperties = nullptr;
+	VulkanSwapchain* m_swapchain = nullptr;
+
+	std::vector<VulkanImage*> m_images;
+	std::vector<VulkanImageView*> m_imageViews;
+};

@@ -1,0 +1,474 @@
+#version 450
+
+layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+//---------------------------------------------------------
+// Structs
+//---------------------------------------------------------
+
+struct Ray
+{
+    vec3 pos;
+    vec3 dir;
+};
+
+struct Photon
+{
+	vec3 position;
+	float phi;
+	vec4 power;
+	float theta;
+};
+
+//---------------------------------------------------------
+// Constants
+//---------------------------------------------------------
+const vec4 SUNLIGHT_COLOR = vec4(1.0f);
+const float PI = 3.14159265359;
+const float INV_4Pi = 1.0f/(4.0f * PI);
+const float FLT_MAX = 3.402823466e+38;
+const float FLT_MIN = 1.175494351e-38;
+const vec4 BG_COLORS[5] = 
+    {
+        vec4(0.00f, 0.0f, 0.02f, 1.0f), // GROUND DARKER BLUE
+        vec4(0.01f, 0.05f, 0.2f, 1.0f), // HORIZON GROUND DARK BLUE
+        vec4(0.7f, 0.9f, 1.0f, 1.0f), // HORIZON SKY WHITE
+        vec4(0.1f, 0.3f, 1.0f, 1.0f),  // SKY LIGHT BLUE
+        vec4(0.01f, 0.1f, 0.7f, 1.0f)  // SKY BLUE
+    };
+const float BG_DISTS[5] = 
+{
+    -1.0f,
+    -0.04f,
+    0.0f,
+    0.5f,
+    1.0f
+};
+
+//---------------------------------------------------------
+// Descriptor Set
+//---------------------------------------------------------
+layout (binding = 0) buffer PhotonMap
+{
+    Photon photons[];
+};
+layout (binding = 1) uniform PhotonMapProperties
+{
+	vec4 lightDirection;
+    vec4 bounds[2];
+    uvec3 cellCount;
+    float cellSize;
+    uint photonSize;
+    
+} photonMapProperties;
+
+layout (binding = 2) uniform sampler3D cloudSampler;
+layout (binding = 3) uniform CloudProperties
+{
+    vec4 bounds[2];
+    uvec4 voxelCount;
+    float maxExtinction;
+    float baseScaling;
+    float densityScaling;
+
+} cloudProperties;
+
+layout (binding = 4) uniform Parameters
+{
+    uint maxRayBounces;
+    float lightIntensity;
+    float phaseG;  // in [-1, 1]
+    float phaseOnePlusG2;
+    float phaseOneMinusG2;
+    float phaseOneOver2G;
+    bool isotropic;
+
+} parameters;
+
+layout(binding = 5) buffer CollisionMap
+{
+    uint count[];
+};
+
+layout (push_constant) uniform PushConstants
+{
+    double time;
+    int seed;
+    uint frameCount;
+} pushConstants;
+
+//---------------------------------------------------------
+// Helper Functions
+//---------------------------------------------------------
+vec4 sampleBackground(in vec3 dir)
+{
+    float dist = dir.y;
+    lowp vec4 col = BG_COLORS[0];
+    for (int i=1; i < 5; ++i)
+    {
+        col = mix(col, BG_COLORS[i], smoothstep(BG_DISTS[i-1], BG_DISTS[i], dist));
+    }
+    return col;
+}
+
+vec4 sampleCloud(in vec3 pos)
+{
+    vec3 normalizedIdx = ((vec4(pos,0) - cloudProperties.bounds[0])/(cloudProperties.bounds[1] - cloudProperties.bounds[0])).xyz;
+    return vec4(texture(cloudSampler, normalizedIdx).x);
+}
+
+float average(in vec4 data)
+{
+    float accumulated = 0.0f;
+    for(int i = 0; i < 4; i++)
+    {
+        accumulated += data[i];
+    }
+    return accumulated/4.0f;
+}
+
+int isNegativeSign(in float value)
+{
+    return int(value < 0);
+}
+
+//https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-box-intersection
+bool intersectCloud(in Ray ray, out vec3 intersectionPoint)
+{
+    float tmin, tmax, tymin, tymax, tzmin, tzmax;
+    vec3 invdir = 1 / ray.dir;
+    int sign[3] = {isNegativeSign(invdir.x), isNegativeSign(invdir.y), isNegativeSign(invdir.z)};
+
+    intersectionPoint = vec3(FLT_MAX);
+ 
+    tmin = (cloudProperties.bounds[sign[0]].x - ray.pos.x) * invdir.x; 
+    tmax = (cloudProperties.bounds[1-sign[0]].x - ray.pos.x) * invdir.x; 
+    tymin = (cloudProperties.bounds[sign[1]].y - ray.pos.y) * invdir.y; 
+    tymax = (cloudProperties.bounds[1-sign[1]].y - ray.pos.y) * invdir.y; 
+ 
+    if ((tmin > tymax) || (tymin > tmax)) 
+        return false; 
+    if (tymin > tmin) 
+        tmin = tymin; 
+    if (tymax < tmax) 
+        tmax = tymax; 
+ 
+    tzmin = (cloudProperties.bounds[sign[2]].z - ray.pos.z) * invdir.z; 
+    tzmax = (cloudProperties.bounds[1-sign[2]].z - ray.pos.z) * invdir.z; 
+ 
+    if ((tmin > tzmax) || (tzmin > tmax)) 
+        return false; 
+    if (tzmin > tmin) 
+        tmin = tzmin; 
+    if (tzmax < tmax) 
+        tmax = tzmax;
+
+    // We just want intersections in front of the ray
+    if(tmax < 0) // ray outside of the cloud, pointing away
+    {
+        return false;
+    }
+    else if(tmin < 0) // ray is inside the cloud
+    {
+        intersectionPoint = ray.pos + ray.dir * tmax;
+    }
+    else  // ray outside the cloud, pointing torwards it
+    {
+        intersectionPoint = ray.pos + ray.dir * tmin;
+    }
+
+    return true; 
+}
+
+void leaveCloud(in Ray ray, out vec3 intersectionPoint)
+{
+    float tmin, tmax, tymin, tymax, tzmin, tzmax;
+    vec3 invdir = 1 / ray.dir;
+    int sign[3] = {isNegativeSign(invdir.x), isNegativeSign(invdir.y), isNegativeSign(invdir.z)};
+
+    intersectionPoint = vec3(FLT_MAX);
+ 
+    tmin = (cloudProperties.bounds[sign[0]].x - ray.pos.x) * invdir.x; 
+    tmax = (cloudProperties.bounds[1-sign[0]].x - ray.pos.x) * invdir.x; 
+    tymin = (cloudProperties.bounds[sign[1]].y - ray.pos.y) * invdir.y; 
+    tymax = (cloudProperties.bounds[1-sign[1]].y - ray.pos.y) * invdir.y; 
+ 
+    if ((tmin > tymax) || (tymin > tmax)) 
+        return; 
+    if (tymin > tmin) 
+        tmin = tymin; 
+    if (tymax < tmax) 
+        tmax = tymax; 
+ 
+    tzmin = (cloudProperties.bounds[sign[2]].z - ray.pos.z) * invdir.z; 
+    tzmax = (cloudProperties.bounds[1-sign[2]].z - ray.pos.z) * invdir.z; 
+ 
+    //if ((tmin > tzmax) || (tzmin > tmax)) 
+    //    return false; 
+    if (tzmin > tmin) 
+        tmin = tzmin; 
+    if (tzmax < tmax) 
+        tmax = tzmax;
+
+	intersectionPoint = ray.pos + ray.dir * tmax;
+}
+
+void enterCloud(in Ray ray, out vec3 intersectionPoint)
+{
+    float tmin, tmax, tymin, tymax, tzmin, tzmax;
+    vec3 invdir = 1 / ray.dir;
+    int sign[3] = {isNegativeSign(invdir.x), isNegativeSign(invdir.y), isNegativeSign(invdir.z)};
+
+    intersectionPoint = vec3(FLT_MAX);
+ 
+    tmin = (cloudProperties.bounds[sign[0]].x - ray.pos.x) * invdir.x; 
+    tmax = (cloudProperties.bounds[1-sign[0]].x - ray.pos.x) * invdir.x; 
+    tymin = (cloudProperties.bounds[sign[1]].y - ray.pos.y) * invdir.y; 
+    tymax = (cloudProperties.bounds[1-sign[1]].y - ray.pos.y) * invdir.y; 
+ 
+    if ((tmin > tymax) || (tymin > tmax)) 
+        return; 
+    if (tymin > tmin) 
+        tmin = tymin; 
+    if (tymax < tmax) 
+        tmax = tymax; 
+ 
+    tzmin = (cloudProperties.bounds[sign[2]].z - ray.pos.z) * invdir.z; 
+    tzmax = (cloudProperties.bounds[1-sign[2]].z - ray.pos.z) * invdir.z; 
+ 
+    //if ((tmin > tzmax) || (tzmin > tmax)) 
+    //    return false; 
+    if (tzmin > tmin) 
+        tmin = tzmin; 
+    if (tzmax < tmax) 
+        tmax = tzmax;
+
+	intersectionPoint = ray.pos + ray.dir * tmin;
+}
+
+bool isInCloud(in vec3 point)
+{
+    return !(point.x < cloudProperties.bounds[0].x || 
+            point.y < cloudProperties.bounds[0].y || 
+            point.z < cloudProperties.bounds[0].z || 
+            point.x > cloudProperties.bounds[1].x || 
+            point.y > cloudProperties.bounds[1].y || 
+            point.z > cloudProperties.bounds[1].z );
+}
+
+// https://www.shadertoy.com/view/lldGRM
+void createOrthonormalBasis(in const vec3 n, out vec3 xp, out vec3 yp)
+{
+  float sz = n.z >= 0.0 ? 1.0 : -1.0;
+  float a  =  n.y/(1.0+abs(n.z));
+  float b  =  n.y*a;
+  float c  = -n.x*a;
+    
+  xp = vec3(n.z+sz*b, sz*c, -n.x);
+  yp = vec3(c, 1.0-b, -sz*n.y);
+}
+
+float SphericalTheta(const vec3 v) {
+    return acos(clamp(v.z, -1, 1));
+}
+
+float SphericalPhi(const vec3 v) {
+    float p = atan(v.y, v.x) * 2;
+    return (p < 0) ? (p + 2 * PI) : p;
+}
+//---------------------------------------------------------
+// PNRG and Noise functions
+//---------------------------------------------------------
+uint rng_state = 0;
+uint rand_xorshift()
+{
+	// Xorshift algorithm from George Marsaglia's paper
+	rng_state ^= (rng_state << 13);
+	rng_state ^= (rng_state >> 17);
+	rng_state ^= (rng_state << 5);
+	return rng_state;
+}
+
+float generateRandomNumber()
+{
+	return rand_xorshift() * (1.0 / 4294967296.0);
+}
+
+void initializeRandom(uint seed) {
+	rng_state = seed;
+	for (int i = 0; i < seed % 7 + 2; i++)
+	 	generateRandomNumber();
+}
+
+//---------------------------------------------------------
+// Phase BSDF - Henyey-Greenstein
+//---------------------------------------------------------
+
+float calculatePDF(float costheta)
+{
+    return INV_4Pi * parameters.phaseOneMinusG2 / pow(parameters.phaseOnePlusG2 - 2.0f * parameters.phaseG * costheta, 1.5f);
+}
+// Assumes non-isotropic due to division by phaseG
+float invertCDF(float xi)
+{
+    float sqrTerm  = (parameters.phaseOneMinusG2) / (1.0f - parameters.phaseG + 2.0f * parameters.phaseG * xi);
+    return parameters.phaseOneOver2G * (parameters.phaseOnePlusG2 - sqrTerm  * sqrTerm);
+}
+
+// Evaluate radiance
+float samplePhase(in const vec3 incomingDirection, in const vec3 sampleDirection)
+{
+    float pdf;
+
+    if(parameters.isotropic)
+    {
+        pdf = INV_4Pi;
+    }
+    else
+    {
+        float cosTheta = dot(incomingDirection, sampleDirection);
+        pdf = calculatePDF(cosTheta);
+    }
+
+    return pdf;
+}
+
+// Scatter ray and evaluate radiance
+void scatterRay(inout vec3 rayDirection)
+{
+    vec3 sampleDirection;
+    if(parameters.isotropic)
+    {
+        float xi = generateRandomNumber();
+        sampleDirection.z = xi * 2.0 - 1.0; // cosTheta
+        float sinTheta = 1.0 - sampleDirection.z * sampleDirection.z; // actually square of sinTheta
+        if (sinTheta > 0.0)
+        {
+            sinTheta = sqrt(max(0,sinTheta));
+            xi = generateRandomNumber();
+            float phi = xi * 2.0 * PI;
+            sampleDirection.x = sinTheta * cos(phi);
+            sampleDirection.y = sinTheta * sin(phi);
+        }
+        else
+        {
+            sampleDirection.x = sampleDirection.y = 0.0;
+        }
+    }
+    else
+    {
+        float phi = generateRandomNumber() * 2 * PI;
+        float cosTheta = invertCDF(generateRandomNumber());
+        float sinTheta = sqrt(max(0, 1.0f - cosTheta * cosTheta));
+        vec3 t0, t1;
+
+        createOrthonormalBasis(rayDirection, t0, t1);
+        
+        sampleDirection =
+            sinTheta * cos(phi) * t0 +
+            sinTheta * sin(phi) * t1 +
+            cosTheta * rayDirection;
+    }
+    rayDirection = sampleDirection;
+}
+//---------------------------------------------------------
+// Cloud Scatter
+//---------------------------------------------------------
+
+// Update ray position based on scattering
+// Returns wether ray is still in the cloud or not
+bool findScatterPoint(inout Ray ray)
+{
+    vec3 exitPoint;
+    leaveCloud(ray, exitPoint);
+
+    float dist = distance(ray.pos, exitPoint);
+    float t = 0;
+    vec4 extinction;
+    vec3 currentPoint;
+    float zeta;
+    float xi;
+
+    // Loop until not null scatter or cloud left
+    do
+    {
+        zeta = generateRandomNumber();
+        t = t + -log(1 - zeta) / cloudProperties.maxExtinction;
+        if (t > dist)
+        {
+            return false; // Left the cloud
+        }
+
+        // Update the ray position
+        currentPoint = ray.pos + t * ray.dir;
+
+        // Recompute the local extinction after updating the shading context
+        extinction = sampleCloud(currentPoint) * cloudProperties.densityScaling / cloudProperties.baseScaling;
+        
+        xi = generateRandomNumber();
+        if (xi < extinction.x / cloudProperties.maxExtinction)
+        {
+            break;
+        }
+    } while (true);
+
+    // Advance ray to new position
+    ray.pos = currentPoint;
+
+    return true;
+}
+
+//---------------------------------------------------------
+// Photon Map Functions
+//---------------------------------------------------------
+void depositPhoton(in const Ray ray)
+{
+    ivec3 idx3D = ivec3(ray.pos / photonMapProperties.cellSize);
+    uint idx = idx3D.x + (idx3D.y + idx3D.z * photonMapProperties.cellCount.y) * photonMapProperties.cellCount.x;    
+
+    Photon photon;
+    photon.position = ray.pos;
+    photon.power = SUNLIGHT_COLOR * parameters.lightIntensity;
+    photon.phi = SphericalPhi(ray.dir);
+    photon.theta = SphericalTheta(ray.dir);
+
+    photons[idx] = photon;
+    atomicAdd(count[idx], 1);
+}
+
+void generatePhotonRay(out Ray ray)
+{
+    vec4 boundsDiff = cloudProperties.bounds[1] - cloudProperties.bounds[0];
+
+    ray.dir = photonMapProperties.lightDirection.xyz;
+    ray.pos = vec3(generateRandomNumber() * boundsDiff.x, generateRandomNumber() * boundsDiff.y, generateRandomNumber() * boundsDiff.z) + cloudProperties.bounds[0].xyz;
+
+    enterCloud(ray, ray.pos);
+}
+
+//---------------------------------------------------------
+// Main
+//---------------------------------------------------------
+void main() 
+{
+    initializeRandom(
+        pushConstants.seed +
+        gl_GlobalInvocationID.x +
+        gl_GlobalInvocationID.y * gl_NumWorkGroups.x + 
+        gl_GlobalInvocationID.z * gl_NumWorkGroups.x * gl_NumWorkGroups.y
+        );
+
+    Ray ray;
+
+    // Get ray direction and volume entry point
+    generatePhotonRay(ray);
+
+    // Photon tracer loop
+    while(findScatterPoint(ray))
+    {
+        // Deposit Photon in the map
+        depositPhoton(ray);
+
+        // Get new scatter direction
+        scatterRay(ray.dir);
+    }
+}

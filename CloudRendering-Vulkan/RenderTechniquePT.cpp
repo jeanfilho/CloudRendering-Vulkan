@@ -79,6 +79,7 @@ void RenderTechniquePT::ClearFrameResources()
 {
 	m_imageViews.clear();
 	m_images.clear();
+	m_swapchain = nullptr;
 }
 
 void RenderTechniquePT::QueueUpdateCloudData(VkDescriptorBufferInfo& cloudBufferInfo, unsigned int frameNr)
@@ -139,7 +140,7 @@ void RenderTechniquePT::RecordDrawCommands(VkCommandBuffer commandBuffer, unsign
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout->GetPipelineLayout(), 0, static_cast<uint32_t>(m_descriptorSets.size()), m_descriptorSets.data(), 0, nullptr);
 
 	// Start compute shader
-	vkCmdDispatch(commandBuffer, m_cameraProperties->GetWidth(), m_cameraProperties->GetHeight(), 1);
+	vkCmdDispatch(commandBuffer, (m_cameraProperties->GetWidth() / 32) + 1, (m_cameraProperties->GetHeight() / 32) + 1, 1);
 
 	// Change swapchain image layout to dst blit
 	utilities::CmdTransitionImageLayout(commandBuffer, m_swapchain->GetSwapchainImages()[imageIndex], m_swapchain->GetImageFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);

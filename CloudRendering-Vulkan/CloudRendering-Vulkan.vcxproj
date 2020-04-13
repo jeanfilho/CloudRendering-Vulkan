@@ -219,6 +219,7 @@ call ".\Compile.bat"</Command>
     <ClCompile Include="KDTree.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="RenderTechnique.cpp" />
+    <ClCompile Include="RenderTechniquePPM.cpp" />
     <ClCompile Include="RenderTechniquePT.cpp" />
     <ClCompile Include="RenderTechniqueSV.cpp" />
     <ClCompile Include="stdafx.cpp">
@@ -261,6 +262,7 @@ call ".\Compile.bat"</Command>
     <ClInclude Include="KDTree.h" />
     <ClInclude Include="QueueFamilyIndices.h" />
     <ClInclude Include="RenderTechnique.h" />
+    <ClInclude Include="RenderTechniquePPM.h" />
     <ClInclude Include="RenderTechniquePT.h" />
     <ClInclude Include="RenderTechniqueSV.h" />
     <ClInclude Include="stdafx.h" />

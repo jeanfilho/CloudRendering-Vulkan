@@ -14,9 +14,9 @@ struct CameraProperties
 {
 	glm::vec3 position = glm::vec3(0, 0, -800);
 private:
-	int halfWidth = 800/2;
+	int halfWidth = 800 / 2;
 	glm::vec3 forward = glm::vec3(0, 0, 1);
-	int halfHeight = 600/2;
+	int halfHeight = 600 / 2;
 	glm::vec3 right = glm::vec3(1, 0, 0);
 	float nearPlane = 50.0f;
 	glm::vec3 up = glm::vec3(0, 1, 0);
@@ -43,8 +43,8 @@ public:
 
 	void SetResolution(int newWidth, int newHeight)
 	{
-		halfWidth = newWidth/2;
-		halfHeight = newHeight/2;
+		halfWidth = newWidth / 2;
+		halfHeight = newHeight / 2;
 	}
 
 	void SetFOV(float& fov)
@@ -160,16 +160,19 @@ private:
 };
 
 // Jarosz et al. - 2008 - Advanced Global Illumination using Photon Maps
-struct Photon
+struct Photon // 
 {
-	glm::vec3 position;	// Position
-	char power[4];		// Power packed as 4 chars
-	char phi;			// Compressed incident direction
-	char theta;			// Compressed incident direction
+	glm::vec3 position;
+	float phi;
+	glm::vec4 power;
+	float theta;
 };
 
-struct PhotonEntry
+struct PhotonMapProperties
 {
-	Photon photon;		// Surviving Photon
-	glm::uint32 count;	// Number of hash collisions
+	glm::vec4 lightDirection{ 1, -1, 0, 0 };
+	glm::vec4 bounds[2]{ {0,0,0,0}, {100,100,100,100} };
+	glm::uvec3 cellCount{ 100,100,100 };
+	float cellSize = 1;
+	const glm::uint photonSize = sizeof(Photon);
 };
