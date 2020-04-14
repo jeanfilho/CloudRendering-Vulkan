@@ -365,6 +365,15 @@ VkBufferViewCreateInfo initializers::BufferViewCreateInfo(VkBuffer buffer, VkFor
 	return info;
 }
 
+VkMemoryBarrier initializers::MemoryBarrier(VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask)
+{
+	VkMemoryBarrier info;
+	info.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+	info.srcAccessMask = srcAccessMask;
+	info.dstAccessMask = dstAccessMask;
+	return info;
+}
+
 VkImageCreateInfo initializers::ImageCreateInfo(VkImageType imageType, VkFormat format, VkExtent3D extent, uint32_t mipLevels, uint32_t arrayLayers, VkSampleCountFlagBits samples, VkImageUsageFlags usage, VkImageCreateFlags flags /*= 0*/)
 {
 	VkImageCreateInfo info{};

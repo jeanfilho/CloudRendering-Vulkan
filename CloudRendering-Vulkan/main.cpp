@@ -41,7 +41,7 @@ PushConstants g_pushConstants;
 //--------------------------------------------------------------
 // Globals
 //--------------------------------------------------------------
-RenderTechnique* g_renderTechnique;
+RenderTechniquePT* g_pathTracerTechnique;
 RenderTechniqueSV* g_shadowVolumeTechnique;
 
 VulkanInstance* g_instance;
@@ -178,10 +178,10 @@ void RecordComputeCommands(uint32_t imageIndex)
 	vkBeginCommandBuffer(commandBuffer, &initializers::CommandBufferBeginInfo());
 
 	// Push constants
-	vkCmdPushConstants(commandBuffer, g_renderTechnique->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &g_pushConstants);;
+	vkCmdPushConstants(commandBuffer, g_pathTracerTechnique->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &g_pushConstants);;
 
 	// Record technique commands
-	g_renderTechnique->RecordDrawCommands(commandBuffer, g_currentFrame, imageIndex);
+	g_pathTracerTechnique->RecordDrawCommands(commandBuffer, g_currentFrame, imageIndex);
 
 	// Change swapchain image layout back to present
 	utilities::CmdTransitionImageLayout(commandBuffer, swapchainImage, g_swapchain->GetImageFormat(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
@@ -261,10 +261,10 @@ void UpdateCloudData()
 
 		for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 		{
-			g_renderTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, i);
-			g_renderTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
+			g_pathTracerTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, i);
+			g_pathTracerTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
 		}
-		g_renderTechnique->UpdateDescriptorSets();
+		g_pathTracerTechnique->UpdateDescriptorSets();
 
 		g_shadowVolumeTechnique->QueueUpdateCloudData(cloudBufferInfo, 0);
 		g_shadowVolumeTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, 0);
@@ -297,9 +297,9 @@ void UpdateShadowVolume()
 	// Update render technique descriptor set
 	for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		g_renderTechnique->QueueUpdateShadowVolume(bufferInfo, i);
+		g_pathTracerTechnique->QueueUpdateShadowVolume(bufferInfo, i);
 	}
-	g_renderTechnique->UpdateDescriptorSets();
+	g_pathTracerTechnique->UpdateDescriptorSets();
 
 	g_pushConstants.frameCount = 0;
 	g_renderStartTime = g_pushConstants.time;
@@ -312,7 +312,7 @@ void ClearSwapchain()
 	std::cout << "Clearing swapchain...";
 
 	// Recreate result images. They should match the resolution of the screen
-	g_renderTechnique->ClearFrameResources();
+	g_pathTracerTechnique->ClearFrameResources();
 
 	// Recreate framebuffers
 	for (auto& framebuffer : g_framebuffers)
@@ -376,7 +376,7 @@ void CreateSwapchain()
 			static_cast<uint32_t>(g_cameraProperties.GetHeight()));
 		g_resultImageViews[i] = new VulkanImageView(g_device, g_resultImages[i]);
 	}
-	g_renderTechnique->SetFrameResources(g_resultImages, g_resultImageViews, g_swapchain);
+	g_pathTracerTechnique->SetFrameResources(g_resultImages, g_resultImageViews, g_swapchain);
 
 	// Recreate command buffers
 	g_computeCommandPool->AllocateCommandBuffers(g_swapchain->GetSwapchainImages().size());
@@ -423,7 +423,7 @@ void Clear()
 	delete g_parametersBuffer;
 
 	// Compute Resources
-	delete g_renderTechnique;
+	delete g_pathTracerTechnique;
 	delete g_computeCommandPool;
 	delete g_computeDescriptorPool;
 
@@ -525,11 +525,11 @@ void DrawUI()
 
 			for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 			{
-				g_renderTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
-				g_renderTechnique->QueueUpdateParameters(parametersInfo, i);
-				g_renderTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
+				g_pathTracerTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
+				g_pathTracerTechnique->QueueUpdateParameters(parametersInfo, i);
+				g_pathTracerTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
 			}
-			g_renderTechnique->UpdateDescriptorSets();
+			g_pathTracerTechnique->UpdateDescriptorSets();
 
 			UpdateShadowVolume();
 		}
@@ -653,7 +653,7 @@ void InitializeImGUI()
 
 void CreateRenderTechnique()
 {
-	g_renderTechnique = new RenderTechniquePT(g_device, g_swapchain, &g_cameraProperties);
+	g_pathTracerTechnique = new RenderTechniquePT(g_device, g_swapchain, &g_cameraProperties);
 }
 
 bool InitializeVulkan()
@@ -715,13 +715,13 @@ bool InitializeVulkan()
 	};
 	for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		g_renderTechnique->GetDescriptorPoolSizes(poolSizes);
+		g_pathTracerTechnique->GetDescriptorPoolSizes(poolSizes);
 	}
 
-	uint32_t requiredSets = g_shadowVolumeTechnique->GetRequiredSetCount() + g_renderTechnique->GetRequiredSetCount() * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+	uint32_t requiredSets = g_shadowVolumeTechnique->GetRequiredSetCount() + g_pathTracerTechnique->GetRequiredSetCount() * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 	g_computeDescriptorPool = new VulkanDescriptorPool(g_device, poolSizes, requiredSets);
 
-	g_computeDescriptorPool->AllocateSets(g_renderTechnique, MAX_FRAMES_IN_FLIGHT);
+	g_computeDescriptorPool->AllocateSets(g_pathTracerTechnique, MAX_FRAMES_IN_FLIGHT);
 	g_computeDescriptorPool->AllocateSets(g_shadowVolumeTechnique, 1);
 
 	// Set shadow volume output image
@@ -740,11 +740,11 @@ bool InitializeVulkan()
 
 	for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		g_renderTechnique->QueueUpdateParameters(parameterInfo, i);
-		g_renderTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
-		g_renderTechnique->QueueUpdateShadowVolumeSampler(shadowImageInfo, i);
+		g_pathTracerTechnique->QueueUpdateParameters(parameterInfo, i);
+		g_pathTracerTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
+		g_pathTracerTechnique->QueueUpdateShadowVolumeSampler(shadowImageInfo, i);
 	}
-	g_renderTechnique->UpdateDescriptorSets();
+	g_pathTracerTechnique->UpdateDescriptorSets();
 
 	shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 	g_shadowVolumeTechnique->QueueUpdateShadowVolumeSampler(shadowImageInfo, 0);

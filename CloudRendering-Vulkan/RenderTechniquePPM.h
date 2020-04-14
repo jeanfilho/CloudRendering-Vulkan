@@ -3,6 +3,7 @@
 #include "RenderTechnique.h"
 
 class VulkanBuffer;
+class VulkanBufferView;
 
 class RenderTechniquePPM : public RenderTechnique
 {
@@ -36,11 +37,8 @@ private:
 	VulkanPipelineLayout* m_ptPipelineLayout = nullptr;
 	VulkanComputePipeline* m_ptPipeline = nullptr;
 
-	VulkanImage* m_photonMap = nullptr;
-	VulkanImageView* m_photonMapView = nullptr;
-
-	VulkanImage* m_collisionMap = nullptr;
-	VulkanImageView* m_collisionMapView = nullptr;
+	VulkanBuffer* m_photonMap = nullptr;
+	VulkanBuffer* m_collisionMap = nullptr;
 
 	const CameraProperties* m_cameraProperties = nullptr;
 	const PhotonMapProperties* m_photonMapProperties = nullptr;

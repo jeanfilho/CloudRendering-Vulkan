@@ -11,6 +11,14 @@ struct Ray
     vec3 dir;
 };
 
+struct Photon
+{
+	vec3 position;
+	float phi;
+	vec4 power;
+	float theta;
+};
+
 //---------------------------------------------------------
 // Constants
 //---------------------------------------------------------
@@ -39,17 +47,25 @@ const float BG_DISTS[5] =
 //---------------------------------------------------------
 // Descriptor Set
 //---------------------------------------------------------
-layout (binding = 0, rgba32f) uniform image3D photonMap;
-layout (binding = 1) uniform PhotonMapProperties
+layout (binding = 0, rgba32f) uniform image2D resultImage;
+layout (binding = 1) uniform CameraProperties
 {
-	vec4 lightDirection;
-    vec4 bounds[2];
-    uvec3 cellCount;
-    float cellSize;
-    
-} photonMapProperties;
+	vec3 position;
+	int halfWidth;
+	vec3 forward;
+    int halfHeight;
+    vec3 right;
+    float nearPlane;
+    vec3 up;
+    float pixelSizeY;
+    float pixelSizeX;
 
-layout (binding = 2) uniform sampler3D cloudSampler;
+} cameraProperties;
+
+layout (binding = 2) buffer PhotonMap
+{
+    Photon photons[];
+};
 layout (binding = 3) uniform CloudProperties
 {
     vec4 bounds[2];
@@ -72,7 +88,19 @@ layout (binding = 4) uniform Parameters
 
 } parameters;
 
-layout(binding = 5, r8ui ) uniform uimage3D collisionGrid;
+layout (binding = 5) uniform PhotonMapProperties
+{
+	vec4 lightDirection;
+	vec4 bounds[2];
+	uvec3 cellCount;
+	float cellSize;
+	uint photonSize;
+} photonMapProperties;
+
+layout (binding = 6) buffer CollisionMap
+{
+    uint collisions[];
+};
 
 layout (push_constant) uniform PushConstants
 {
@@ -101,6 +129,14 @@ vec4 sampleCloud(in vec3 pos)
     return vec4(texture(cloudSampler, normalizedIdx).x);
 }
 
+vec4 sampleShadowVolume(in vec3 pos)
+{
+    vec3 normalizedIdx =
+        (shadowVolumeProperties.basisChange * (vec4(pos, 1) - shadowVolumeProperties.bounds[0]) /
+        (shadowVolumeProperties.basisChange * (shadowVolumeProperties.bounds[1] - shadowVolumeProperties.bounds[0]))).xyz;
+    return vec4(texture(shadowSampler, normalizedIdx).x);
+}
+
 float average(in vec4 data)
 {
     float accumulated = 0.0f;
@@ -114,6 +150,15 @@ float average(in vec4 data)
 int isNegativeSign(in float value)
 {
     return int(value < 0);
+}
+
+void getCameraRay(in ivec2 coord, out Ray ray)
+{
+    ray.dir = cameraProperties.forward * cameraProperties.nearPlane
+                    + cameraProperties.right  * cameraProperties.pixelSizeX * (coord.x - cameraProperties.halfWidth)
+                    - cameraProperties.up * cameraProperties.pixelSizeY * (coord.y - cameraProperties.halfHeight);
+    ray.pos = ray.dir + cameraProperties.position;
+    ray.dir = normalize(ray.dir);
 }
 
 //https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-box-intersection
@@ -205,6 +250,12 @@ bool isInCloud(in vec3 point)
             point.x > cloudProperties.bounds[1].x || 
             point.y > cloudProperties.bounds[1].y || 
             point.z > cloudProperties.bounds[1].z );
+}
+
+vec4 getCloudColorProperty(in vec3 pos)
+{
+    //TODO
+    return vec4(1.0f);
 }
 
 // https://www.shadertoy.com/view/lldGRM
@@ -373,7 +424,7 @@ bool findScatterPoint(inout Ray ray)
 //---------------------------------------------------------
 void main() 
 {
-    initializeRandom(pushConstants.seed + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * 1080);
+    initializeRandom(pushConstants.seed + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * cameraProperties.halfWidth * 2);
 
     Ray ray;    
     vec4 result = vec4(0.0f);

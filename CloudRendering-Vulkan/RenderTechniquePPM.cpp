@@ -3,6 +3,7 @@
 
 #include "VulkanSwapchain.h"
 #include "VulkanBuffer.h"
+#include "VulkanBufferView.h"
 
 RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, const PhotonMapProperties* photonMapProperties) :
 	RenderTechnique(device),
@@ -18,7 +19,7 @@ RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* sw
 	// Photon Tracer Tracer Descriptor Set Layout
 	std::vector<VkDescriptorSetLayoutBinding> ptSetLayoutBindings = {
 		// Binding 0: Output 3D photon map image (read and write)
-		initializers::DescriptorSetLayoutBinding(0, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+		initializers::DescriptorSetLayoutBinding(0, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
 		// Binding 1: Photon Map Properties (read)
 		initializers::DescriptorSetLayoutBinding(1, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
 		// Binding 2: Cloud grid 3D sampler (read)
@@ -28,7 +29,7 @@ RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* sw
 		// Binding 4: Parameters (read)
 		initializers::DescriptorSetLayoutBinding(4, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
 		// Binding 5: Photon collision map (read and write)
-		initializers::DescriptorSetLayoutBinding(5, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+		initializers::DescriptorSetLayoutBinding(5, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
 	};
 	m_ptDescriptorSetLayout = new VulkanDescriptorSetLayout(m_device, ptSetLayoutBindings);
 
@@ -58,13 +59,15 @@ RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* sw
 		// Binding 1: Camera properties (read)
 		initializers::DescriptorSetLayoutBinding(1, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
 		// Binding 2: Photon Map
-		initializers::DescriptorSetLayoutBinding(2, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+		initializers::DescriptorSetLayoutBinding(2, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
 		// Binding 3: Cloud Properties (read)
 		initializers::DescriptorSetLayoutBinding(3, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
 		// Binding 4: Parameters (read)
 		initializers::DescriptorSetLayoutBinding(4, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
 		// Binding 5: Photon Map Properties
-		initializers::DescriptorSetLayoutBinding(5, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+		initializers::DescriptorSetLayoutBinding(5, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
+		// Binding 6: Collision Map
+		initializers::DescriptorSetLayoutBinding(6, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
 	};
 	m_descriptorSetLayout = new VulkanDescriptorSetLayout(m_device, peSetLayoutBindings);
 
@@ -102,50 +105,34 @@ void RenderTechniquePPM::ClearPhotonMap()
 {
 	if (m_photonMap)
 	{
-		delete m_collisionMapView;
 		delete m_collisionMap;
-		delete m_photonMapView;
 		delete m_photonMap;
 
 		m_photonMap = nullptr;
-		m_photonMapView = nullptr;
 		m_collisionMap = nullptr;
-		m_collisionMapView = nullptr;
 	}
 }
 
 void RenderTechniquePPM::AllocatePhotonMap(VulkanBuffer* photonMapPropertiesBuffer)
 {
-	m_photonMap = new VulkanImage(
-		m_device,
-		VK_FORMAT_R64G64B64A64_SFLOAT, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
-		m_photonMapProperties->cellCount.x, // Photon intensity, position, and incident direction - 18 bytes
-		m_photonMapProperties->cellCount.y,
-		m_photonMapProperties->cellCount.z);
-	m_photonMapView = new VulkanImageView(m_device, m_photonMap);
-
-	m_collisionMap = new VulkanImage(
-		m_device,
-		VK_FORMAT_R32_UINT, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
-		m_photonMapProperties->cellCount.x,
-		m_photonMapProperties->cellCount.y,
-		m_photonMapProperties->cellCount.z);
-	m_collisionMapView = new VulkanImageView(m_device, m_collisionMap);
-
+	uint32_t bufferSize = m_photonMapProperties->cellCount.x * m_photonMapProperties->cellCount.y * m_photonMapProperties->cellCount.z;
+	m_photonMap = new VulkanBuffer(m_device, nullptr, sizeof(Photon), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize);
+	m_collisionMap = new VulkanBuffer(m_device, nullptr, sizeof(uint32_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize);
 
 	std::vector<VkWriteDescriptorSet> writes;
 	uint32_t setSize = static_cast<uint32_t>(m_descriptorSets.size() / 2);
 
-	auto photonMapInfo = initializers::DescriptorImageInfo(VK_NULL_HANDLE, m_photonMapView->GetImageView(), VK_IMAGE_LAYOUT_GENERAL);
-	auto collisionMapInfo = initializers::DescriptorImageInfo(VK_NULL_HANDLE, m_collisionMapView->GetImageView(), VK_IMAGE_LAYOUT_GENERAL);
+	auto photonMapInfo = initializers::DescriptorBufferInfo(m_photonMap->GetBuffer(), 0, VK_WHOLE_SIZE);
+	auto collisionMapInfo = initializers::DescriptorBufferInfo(m_collisionMap->GetBuffer(), 0, VK_WHOLE_SIZE);
 	auto photonMapPropertiesInfo = initializers::DescriptorBufferInfo(photonMapPropertiesBuffer->GetBuffer(), 0, photonMapPropertiesBuffer->GetSize());
 	for (size_t i = 0; i < setSize; i++)
 	{
-		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &photonMapInfo));
-		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 5, &collisionMapInfo));
+		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, &photonMapInfo));
+		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5, &collisionMapInfo));
 		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &photonMapPropertiesInfo));
-		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i + setSize], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2, &photonMapInfo));
+		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i + setSize], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2, &photonMapInfo));
 		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i + setSize], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5, &photonMapPropertiesInfo));
+		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i + setSize], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6, &collisionMapInfo));
 	};
 	vkUpdateDescriptorSets(m_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
@@ -186,26 +173,26 @@ void RenderTechniquePPM::GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize
 
 void RenderTechniquePPM::QueueUpdateCloudData(VkDescriptorBufferInfo& cloudBufferInfo, unsigned int frameNr)
 {
-	uint32_t setSize = static_cast<uint32_t>(m_descriptorSets.size() / 2);
+	size_t setSize = m_descriptorSets.size() / 2;
 	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr + setSize], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
 	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
 }
 
 void RenderTechniquePPM::QueueUpdateCloudDataSampler(VkDescriptorImageInfo& cloudImageInfo, unsigned int frameNr)
 {
-	uint32_t setSize = static_cast<uint32_t>(m_descriptorSets.size() / 2);
+	size_t setSize = m_descriptorSets.size() / 2;
 	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo));
 }
 
 void RenderTechniquePPM::QueueUpdateCameraProperties(VkDescriptorBufferInfo& cameraBufferInfo, unsigned int frameNr)
 {
-	uint32_t setSize = static_cast<uint32_t>(m_descriptorSets.size() / 2);
+	size_t setSize = m_descriptorSets.size() / 2;
 	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr + setSize], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &cameraBufferInfo));
 }
 
 void RenderTechniquePPM::QueueUpdateParameters(VkDescriptorBufferInfo& parametersBufferInfo, unsigned int frameNr)
 {
-	uint32_t setSize = static_cast<uint32_t>(m_descriptorSets.size() / 2);
+	size_t setSize = m_descriptorSets.size() / 2;
 	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr + setSize], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &parametersBufferInfo));
 	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &parametersBufferInfo));
 }
@@ -224,12 +211,6 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 
 	// Photon Tracing
 	{
-		// Change Photon Map Image Layout to writeable
-		utilities::CmdTransitionImageLayout(commandBuffer, m_photonMap->GetImage(), m_photonMap->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-
-		// Change Photon Collision Image Layout to writeable
-		utilities::CmdTransitionImageLayout(commandBuffer, m_collisionMap->GetImage(), m_collisionMap->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-
 		// Bind compute pipeline
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_ptPipeline->GetPipeline());
 
@@ -239,6 +220,10 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 		// Start compute shader
 		vkCmdDispatch(commandBuffer, m_cameraProperties->GetWidth(), m_cameraProperties->GetHeight(), 1);
 	}
+
+	// Wait until tracing is complete to start the estimate
+	VkMemoryBarrier memoryBarrier = initializers::MemoryBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_NULL_HANDLE, 1, &memoryBarrier, 0, VK_NULL_HANDLE, 0, VK_NULL_HANDLE);
 
 	// Photon Estimate
 	{
