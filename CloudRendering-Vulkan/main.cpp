@@ -295,8 +295,11 @@ void UpdateCloudData()
 		{
 			g_pathTracingTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, i);
 			g_pathTracingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
+			g_photonMappingTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, i);
+			g_photonMappingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
 		}
 		g_pathTracingTechnique->UpdateDescriptorSets();
+		g_photonMappingTechnique->UpdateDescriptorSets();
 
 		g_shadowVolumeTechnique->QueueUpdateCloudData(cloudBufferInfo, 0);
 		g_shadowVolumeTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, 0);
@@ -414,6 +417,7 @@ void CreateSwapchain()
 		g_resultImageViews[i] = new VulkanImageView(g_device, g_resultImages[i]);
 	}
 	g_pathTracingTechnique->SetFrameResources(g_resultImages, g_resultImageViews, g_swapchain);
+	g_photonMappingTechnique->SetFrameResources(g_resultImages, g_resultImageViews, g_swapchain);
 
 	// Recreate command buffers
 	g_computeCommandPool->AllocateCommandBuffers(g_swapchain->GetSwapchainImages().size());
@@ -565,10 +569,14 @@ void DrawUI()
 			for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 			{
 				g_pathTracingTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
+				g_photonMappingTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
 				g_pathTracingTechnique->QueueUpdateParameters(parametersInfo, i);
+				g_photonMappingTechnique->QueueUpdateParameters(parametersInfo, i);
 				g_pathTracingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
+				g_photonMappingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
 			}
 			g_pathTracingTechnique->UpdateDescriptorSets();
+			g_photonMappingTechnique->UpdateDescriptorSets();
 
 			UpdateLight();
 		}
@@ -755,9 +763,11 @@ bool InitializeVulkan()
 		g_pathTracingTechnique->GetDescriptorPoolSizes(poolSizes);
 	}
 
-	uint32_t requiredSets = g_shadowVolumeTechnique->GetRequiredSetCount() + g_pathTracingTechnique->GetRequiredSetCount() * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+	uint32_t requiredSets = g_shadowVolumeTechnique->GetRequiredSetCount() + 
+		(g_pathTracingTechnique->GetRequiredSetCount() + g_photonMappingTechnique->GetRequiredSetCount() )* static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 	g_computeDescriptorPool = new VulkanDescriptorPool(g_device, poolSizes, requiredSets);
 
+	g_computeDescriptorPool->AllocateSets(g_photonMappingTechnique, MAX_FRAMES_IN_FLIGHT);
 	g_computeDescriptorPool->AllocateSets(g_pathTracingTechnique, MAX_FRAMES_IN_FLIGHT);
 	g_computeDescriptorPool->AllocateSets(g_shadowVolumeTechnique, 1);
 
@@ -778,10 +788,15 @@ bool InitializeVulkan()
 	for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		g_pathTracingTechnique->QueueUpdateParameters(parameterInfo, i);
+		g_photonMappingTechnique->QueueUpdateParameters(parameterInfo, i);
 		g_pathTracingTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
+		g_photonMappingTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
 		g_pathTracingTechnique->QueueUpdateShadowVolumeSampler(shadowImageInfo, i);
+		g_photonMappingTechnique->QueueUpdateShadowVolumeSampler(shadowImageInfo, i);
+
 	}
 	g_pathTracingTechnique->UpdateDescriptorSets();
+	g_photonMappingTechnique->UpdateDescriptorSets();
 
 	shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 	g_shadowVolumeTechnique->QueueUpdateShadowVolumeSampler(shadowImageInfo, 0);

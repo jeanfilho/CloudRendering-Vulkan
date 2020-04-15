@@ -175,4 +175,6 @@ struct PhotonMapProperties
 	glm::uvec3 cellCount{ 100,100,100 };
 	float cellSize = 1;
 	const glm::uint photonSize = sizeof(Photon);
+	float stepSize = 1;
+	float sampleRadius = 1;
 };

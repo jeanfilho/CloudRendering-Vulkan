@@ -59,6 +59,11 @@ RenderTechniquePT::~RenderTechniquePT()
 	ClearFrameResources();
 }
 
+void RenderTechniquePT::GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const
+{
+	outSetLayouts.push_back(m_descriptorSetLayout->GetLayout());
+}
+
 void RenderTechniquePT::SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain)
 {
 	m_images = frameImages;

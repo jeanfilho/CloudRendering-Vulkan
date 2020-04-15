@@ -137,6 +137,12 @@ void RenderTechniquePPM::AllocatePhotonMap(VulkanBuffer* photonMapPropertiesBuff
 	vkUpdateDescriptorSets(m_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
+void RenderTechniquePPM::GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const
+{
+	outSetLayouts.push_back(m_ptDescriptorSetLayout->GetLayout());
+	outSetLayouts.push_back(m_descriptorSetLayout->GetLayout());
+}
+
 void RenderTechniquePPM::SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain)
 {
 	m_images = frameImages;
@@ -146,10 +152,10 @@ void RenderTechniquePPM::SetFrameResources(std::vector<VulkanImage*>& frameImage
 	// Update compute bindings for output image
 	std::vector<VkWriteDescriptorSet> writes;
 	uint32_t setSize = static_cast<uint32_t>(m_descriptorSets.size() / 2);
-	for (size_t i = setSize; i < m_descriptorSets.size(); i++)
+	for (size_t i = 0; i < setSize; i++)
 	{
 		auto imageInfo = initializers::DescriptorImageInfo(VK_NULL_HANDLE, m_imageViews[i]->GetImageView(), VK_IMAGE_LAYOUT_GENERAL);
-		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &imageInfo));
+		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i + setSize], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &imageInfo));
 	};
 	vkUpdateDescriptorSets(m_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }

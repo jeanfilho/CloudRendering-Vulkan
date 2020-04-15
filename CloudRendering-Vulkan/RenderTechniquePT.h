@@ -12,6 +12,7 @@ public:
 	~RenderTechniquePT();
 
 
+	virtual void GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const override;
 	virtual void SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain) override;
 	virtual void ClearFrameResources() override;
 

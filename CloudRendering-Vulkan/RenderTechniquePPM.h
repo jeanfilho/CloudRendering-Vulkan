@@ -14,6 +14,9 @@ public:
 	void AllocatePhotonMap(VulkanBuffer* photonMapPropertiesBuffer);
 	void DeallocatePhotonMap();
 
+
+	virtual void GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const override;
+
 	virtual void SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain);
 	virtual void ClearFrameResources();
 

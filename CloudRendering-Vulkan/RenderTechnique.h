@@ -26,7 +26,7 @@ public:
 
 
 	VkPipelineLayout GetPipelineLayout() const;
-	void GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const;
+	virtual void GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const = 0;
 
 	void UpdateDescriptorSets();
 

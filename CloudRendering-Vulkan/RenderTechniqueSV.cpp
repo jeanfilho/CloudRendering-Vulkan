@@ -38,6 +38,11 @@ RenderTechniqueSV::~RenderTechniqueSV()
 	delete m_pipeline;
 }
 
+void RenderTechniqueSV::GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const
+{
+	outSetLayouts.push_back(m_descriptorSetLayout->GetLayout());
+}
+
 void RenderTechniqueSV::SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain)
 {
 	m_image = frameImages[0];
