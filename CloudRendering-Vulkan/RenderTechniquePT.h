@@ -8,7 +8,7 @@
 class RenderTechniquePT : public RenderTechnique
 {
 public:
-	RenderTechniquePT(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties);
+	RenderTechniquePT(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, PushConstants* pushConstants);
 	~RenderTechniquePT();
 
 

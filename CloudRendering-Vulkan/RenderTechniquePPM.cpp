@@ -5,8 +5,8 @@
 #include "VulkanBuffer.h"
 #include "VulkanBufferView.h"
 
-RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, const PhotonMapProperties* photonMapProperties) :
-	RenderTechnique(device),
+RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, const PhotonMapProperties* photonMapProperties, PushConstants* pushConstants) :
+	RenderTechnique(device, pushConstants),
 	m_swapchain(swapchain),
 	m_cameraProperties(cameraProperties),
 	m_photonMapProperties(photonMapProperties)
@@ -98,10 +98,10 @@ RenderTechniquePPM::~RenderTechniquePPM()
 	delete m_pipelineLayout;
 
 	ClearFrameResources();
-	ClearPhotonMap();
+	DeallocatePhotonMap();
 }
 
-void RenderTechniquePPM::ClearPhotonMap()
+void RenderTechniquePPM::DeallocatePhotonMap()
 {
 	if (m_photonMap)
 	{
@@ -211,6 +211,9 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 
 	// Photon Tracing
 	{
+		// Push constants
+		vkCmdPushConstants(commandBuffer, m_ptPipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &m_pushConstants);
+
 		// Bind compute pipeline
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_ptPipeline->GetPipeline());
 
@@ -218,7 +221,7 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_ptPipelineLayout->GetPipelineLayout(), 0, setSize, m_descriptorSets.data(), 0, nullptr);
 
 		// Start compute shader
-		vkCmdDispatch(commandBuffer, m_cameraProperties->GetWidth(), m_cameraProperties->GetHeight(), 1);
+		vkCmdDispatch(commandBuffer, m_cameraProperties->GetWidth() / 32 + 1, m_cameraProperties->GetHeight() / 32 + 1, 1);
 	}
 
 	// Wait until tracing is complete to start the estimate
@@ -227,6 +230,9 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 
 	// Photon Estimate
 	{
+		// Push constants
+		vkCmdPushConstants(commandBuffer, m_pipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &m_pushConstants);
+
 		// Change Result Image Layout to writeable
 		utilities::CmdTransitionImageLayout(commandBuffer, m_images[currentFrame]->GetImage(), m_images[currentFrame]->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
@@ -237,7 +243,7 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout->GetPipelineLayout(), 0, setSize, m_descriptorSets.data() + setSize, 0, nullptr);
 
 		// Start compute shader
-		vkCmdDispatch(commandBuffer, m_cameraProperties->GetWidth(), m_cameraProperties->GetHeight(), 1);
+		vkCmdDispatch(commandBuffer, m_cameraProperties->GetWidth() / 32 + 1, m_cameraProperties->GetHeight() / 32 + 1, 1);
 	}
 
 	// Change swapchain image layout to dst blit

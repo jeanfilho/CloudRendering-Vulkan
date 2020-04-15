@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "RenderTechniqueSV.h"
 
-RenderTechniqueSV::RenderTechniqueSV(VulkanDevice* device, const ShadowVolumeProperties* shadowVolumeProperties) : RenderTechnique(device), m_shadowVolumeProperties(shadowVolumeProperties)
+RenderTechniqueSV::RenderTechniqueSV(VulkanDevice* device, const ShadowVolumeProperties* shadowVolumeProperties, PushConstants* pushConstants) : RenderTechnique(device, pushConstants), m_shadowVolumeProperties(shadowVolumeProperties)
 {
 	// Shader Modules
 	std::vector<char> shadowVolumeSPV;
@@ -96,13 +96,16 @@ void RenderTechniqueSV::GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>
 
 void RenderTechniqueSV::RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex)
 {
+	// Push constants
+	vkCmdPushConstants(commandBuffer, m_pipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &m_pushConstants);
+
 	utilities::CmdTransitionImageLayout(commandBuffer, m_image->GetImage(), m_image->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline->GetPipeline());
 
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout->GetPipelineLayout(), 0, static_cast<uint32_t>(m_descriptorSets.size()), m_descriptorSets.data(), 0, nullptr);
 
-	vkCmdDispatch(commandBuffer, m_shadowVolumeProperties->voxelAxisCount, m_shadowVolumeProperties->voxelAxisCount, 1);
+	vkCmdDispatch(commandBuffer, m_shadowVolumeProperties->voxelAxisCount / 32 + 1, m_shadowVolumeProperties->voxelAxisCount / 32 + 1, 1);
 
 	utilities::CmdTransitionImageLayout(commandBuffer, m_image->GetImage(), m_image->GetFormat(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }

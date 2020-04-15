@@ -17,7 +17,7 @@ class RenderTechnique
 	friend VulkanDescriptorPool;
 
 public:
-	RenderTechnique(VulkanDevice* device) : m_device(device)
+	RenderTechnique(VulkanDevice* device, PushConstants* pushConstants) : m_device(device), m_pushConstants(pushConstants)
 	{
 	}
 	~RenderTechnique()
@@ -47,6 +47,7 @@ public:
 
 protected:
 	VulkanDevice* m_device = nullptr;
+	PushConstants* m_pushConstants = nullptr;
 	std::vector<VkWriteDescriptorSet> m_writeQueue;
 
 	VulkanDescriptorSetLayout* m_descriptorSetLayout = nullptr;

@@ -7,7 +7,7 @@ class VulkanSampler;
 class RenderTechniqueSV : public RenderTechnique
 {
 public:
-	RenderTechniqueSV(VulkanDevice* device, const ShadowVolumeProperties* shadowVolumeProperties);
+	RenderTechniqueSV(VulkanDevice* device, const ShadowVolumeProperties* shadowVolumeProperties, PushConstants* pushConstants);
 	~RenderTechniqueSV();
 
 	virtual void SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain) override;

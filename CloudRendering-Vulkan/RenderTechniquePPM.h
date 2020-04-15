@@ -8,11 +8,11 @@ class VulkanBufferView;
 class RenderTechniquePPM : public RenderTechnique
 {
 public:
-	RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, const PhotonMapProperties* photonMapProperties);
+	RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, const PhotonMapProperties* photonMapProperties, PushConstants* pushConstants);
 	~RenderTechniquePPM();
 
 	void AllocatePhotonMap(VulkanBuffer* photonMapPropertiesBuffer);
-	void ClearPhotonMap();
+	void DeallocatePhotonMap();
 
 	virtual void SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain);
 	virtual void ClearFrameResources();

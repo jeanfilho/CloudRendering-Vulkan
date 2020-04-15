@@ -9,7 +9,7 @@
 #include "VulkanDescriptorSetLayout.h"
 #include "VulkanSwapchain.h"
 
-RenderTechniquePT::RenderTechniquePT(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties) : RenderTechnique(device), m_cameraProperties(cameraProperties), m_swapchain(swapchain)
+RenderTechniquePT::RenderTechniquePT(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, PushConstants* pushConstants) : RenderTechnique(device, pushConstants), m_cameraProperties(cameraProperties), m_swapchain(swapchain)
 {
 	// Create Shader
 	std::vector<char> pathTracerSPV;
@@ -130,6 +130,9 @@ void RenderTechniquePT::GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>
 
 void RenderTechniquePT::RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex)
 {
+	// Push constants
+	vkCmdPushConstants(commandBuffer, m_pipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &m_pushConstants);
+
 	// Change Result Image Layout to writeable
 	utilities::CmdTransitionImageLayout(commandBuffer, m_images[currentFrame]->GetImage(), m_images[currentFrame]->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
