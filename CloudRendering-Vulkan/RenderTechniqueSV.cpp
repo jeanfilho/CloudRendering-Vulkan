@@ -101,9 +101,6 @@ void RenderTechniqueSV::GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>
 
 void RenderTechniqueSV::RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex)
 {
-	// Push constants
-	vkCmdPushConstants(commandBuffer, m_pipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &m_pushConstants);
-
 	utilities::CmdTransitionImageLayout(commandBuffer, m_image->GetImage(), m_image->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline->GetPipeline());

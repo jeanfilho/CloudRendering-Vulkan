@@ -67,7 +67,13 @@ RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* sw
 		// Binding 5: Photon Map Properties
 		initializers::DescriptorSetLayoutBinding(5, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
 		// Binding 6: Collision Map
-		initializers::DescriptorSetLayoutBinding(6, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+		initializers::DescriptorSetLayoutBinding(6, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
+		// Binding 7: Cloud Sampler
+		initializers::DescriptorSetLayoutBinding(7, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
+		// Binding 8: Shadow Volume Sampler
+		initializers::DescriptorSetLayoutBinding(8, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
+		// Binding 9: Shadow Volume Properties
+		initializers::DescriptorSetLayoutBinding(9, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
 	};
 	m_descriptorSetLayout = new VulkanDescriptorSetLayout(m_device, peSetLayoutBindings);
 
@@ -115,9 +121,11 @@ void RenderTechniquePPM::DeallocatePhotonMap()
 
 void RenderTechniquePPM::AllocatePhotonMap(VulkanBuffer* photonMapPropertiesBuffer)
 {
-	uint32_t bufferSize = m_photonMapProperties->cellCount.x * m_photonMapProperties->cellCount.y * m_photonMapProperties->cellCount.z;
-	m_photonMap = new VulkanBuffer(m_device, nullptr, sizeof(Photon), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize);
-	m_collisionMap = new VulkanBuffer(m_device, nullptr, sizeof(uint32_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize);
+	uint32_t bufferSize = m_photonMapProperties->GetTotalSize();
+
+	VkBufferUsageFlags flags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	m_photonMap = new VulkanBuffer(m_device, nullptr, sizeof(Photon), flags, bufferSize);
+	m_collisionMap = new VulkanBuffer(m_device, nullptr, sizeof(uint32_t), flags, bufferSize);
 
 	std::vector<VkWriteDescriptorSet> writes;
 	uint32_t setSize = static_cast<uint32_t>(m_descriptorSets.size() / 2);
@@ -187,6 +195,7 @@ void RenderTechniquePPM::QueueUpdateCloudData(VkDescriptorBufferInfo& cloudBuffe
 void RenderTechniquePPM::QueueUpdateCloudDataSampler(VkDescriptorImageInfo& cloudImageInfo, unsigned int frameNr)
 {
 	size_t setSize = m_descriptorSets.size() / 2;
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr + setSize], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7, &cloudImageInfo));
 	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo));
 }
 
@@ -205,10 +214,14 @@ void RenderTechniquePPM::QueueUpdateParameters(VkDescriptorBufferInfo& parameter
 
 void RenderTechniquePPM::QueueUpdateShadowVolume(VkDescriptorBufferInfo& shadowVolumeBufferInfo, unsigned int frameNr)
 {
+	size_t setSize = m_descriptorSets.size() / 2;
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr + setSize], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 9, &shadowVolumeBufferInfo));
 }
 
 void RenderTechniquePPM::QueueUpdateShadowVolumeSampler(VkDescriptorImageInfo& shadowVolumeImageInfo, unsigned int frameNr)
 {
+	size_t setSize = m_descriptorSets.size() / 2;
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr + setSize], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8, &shadowVolumeImageInfo));
 }
 
 void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex)
@@ -217,8 +230,16 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 
 	// Photon Tracing
 	{
+		// Clear previous data
+		//vkCmdFillBuffer(commandBuffer, m_collisionMap->GetBuffer(), 0, m_collisionMap->GetSize(), 0);
+		//vkCmdFillBuffer(commandBuffer, m_photonMap->GetBuffer(), 0, m_photonMap->GetSize(), 0);
+
+		// Wait until tracing is complete to start the estimate
+		VkMemoryBarrier memoryBarrier = initializers::MemBarrier(VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_WRITE_BIT);
+		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_NULL_HANDLE, 1, &memoryBarrier, 0, VK_NULL_HANDLE, 0, VK_NULL_HANDLE);
+
 		// Push constants
-		vkCmdPushConstants(commandBuffer, m_ptPipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &m_pushConstants);
+		vkCmdPushConstants(commandBuffer, m_ptPipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), m_pushConstants);
 
 		// Bind compute pipeline
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_ptPipeline->GetPipeline());
@@ -227,17 +248,17 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_ptPipelineLayout->GetPipelineLayout(), 0, setSize, m_descriptorSets.data(), 0, nullptr);
 
 		// Start compute shader
-		vkCmdDispatch(commandBuffer, m_cameraProperties->GetWidth() / 32 + 1, m_cameraProperties->GetHeight() / 32 + 1, 1);
+		vkCmdDispatch(commandBuffer, 10, 10, 1);
 	}
 
 	// Wait until tracing is complete to start the estimate
-	VkMemoryBarrier memoryBarrier = initializers::MemoryBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+	VkMemoryBarrier memoryBarrier = initializers::MemBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
 	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_NULL_HANDLE, 1, &memoryBarrier, 0, VK_NULL_HANDLE, 0, VK_NULL_HANDLE);
 
 	// Photon Estimate
 	{
 		// Push constants
-		vkCmdPushConstants(commandBuffer, m_pipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &m_pushConstants);
+		vkCmdPushConstants(commandBuffer, m_pipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), m_pushConstants);
 
 		// Change Result Image Layout to writeable
 		utilities::CmdTransitionImageLayout(commandBuffer, m_images[currentFrame]->GetImage(), m_images[currentFrame]->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
@@ -249,7 +270,7 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout->GetPipelineLayout(), 0, setSize, m_descriptorSets.data() + setSize, 0, nullptr);
 
 		// Start compute shader
-		vkCmdDispatch(commandBuffer, m_cameraProperties->GetWidth() / 32 + 1, m_cameraProperties->GetHeight() / 32 + 1, 1);
+		vkCmdDispatch(commandBuffer, (m_cameraProperties->GetWidth() / 32) + 1, (m_cameraProperties->GetHeight() / 32) + 1, 1);
 	}
 
 	// Change swapchain image layout to dst blit

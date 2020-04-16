@@ -4,7 +4,7 @@
 #include "VulkanPhysicalDevice.h"
 #include "VulkanDevice.h"
 
-VulkanBuffer::VulkanBuffer(VulkanDevice* device, void* data, size_t elementSize, VkBufferUsageFlagBits usageFlags, size_t count /*= 1*/)
+VulkanBuffer::VulkanBuffer(VulkanDevice* device, void* data, size_t elementSize, VkBufferUsageFlags usageFlags, size_t count /*= 1*/)
 {
 	m_device = device;
 	m_ptr = data;
@@ -18,7 +18,10 @@ VulkanBuffer::~VulkanBuffer()
 {
 	if (m_deviceMemory != VK_NULL_HANDLE)
 	{
-		vkUnmapMemory(m_device->GetDevice(), m_deviceMemory);
+		if (m_ptr)
+		{
+			vkUnmapMemory(m_device->GetDevice(), m_deviceMemory);
+		}
 		vkFreeMemory(m_device->GetDevice(), m_deviceMemory, nullptr);
 	}
 	if (m_buffer != VK_NULL_HANDLE)
@@ -61,7 +64,7 @@ VkDeviceSize VulkanBuffer::GetSize()
 	return m_totalSize;
 }
 
-void VulkanBuffer::AllocateBuffer(VkBufferUsageFlagBits usageFlags)
+void VulkanBuffer::AllocateBuffer(VkBufferUsageFlags usageFlags)
 {
 	VkBufferCreateInfo bufferInfo = initializers::BufferCreateInfo(m_totalSize, usageFlags);
 

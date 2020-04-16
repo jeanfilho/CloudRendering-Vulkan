@@ -58,6 +58,9 @@ layout (binding = 1) uniform PhotonMapProperties
     uvec3 cellCount;
     float cellSize;
     uint photonSize;
+	float stepSize;
+	float sampleRadius;
+	float absorption;
     
 } photonMapProperties;
 
@@ -370,52 +373,7 @@ void scatterRay(inout vec3 rayDirection)
     }
     rayDirection = sampleDirection;
 }
-//---------------------------------------------------------
-// Cloud Scatter
-//---------------------------------------------------------
 
-// Update ray position based on scattering
-// Returns wether ray is still in the cloud or not
-bool findScatterPoint(inout Ray ray)
-{
-    vec3 exitPoint;
-    leaveCloud(ray, exitPoint);
-
-    float dist = distance(ray.pos, exitPoint);
-    float t = 0;
-    vec4 extinction;
-    vec3 currentPoint;
-    float zeta;
-    float xi;
-
-    // Loop until not null scatter or cloud left
-    do
-    {
-        zeta = generateRandomNumber();
-        t = t + -log(1 - zeta) / cloudProperties.maxExtinction;
-        if (t > dist)
-        {
-            return false; // Left the cloud
-        }
-
-        // Update the ray position
-        currentPoint = ray.pos + t * ray.dir;
-
-        // Recompute the local extinction after updating the shading context
-        extinction = sampleCloud(currentPoint) * cloudProperties.densityScaling / cloudProperties.baseScaling;
-        
-        xi = generateRandomNumber();
-        if (xi < extinction.x / cloudProperties.maxExtinction)
-        {
-            break;
-        }
-    } while (true);
-
-    // Advance ray to new position
-    ray.pos = currentPoint;
-
-    return true;
-}
 
 //---------------------------------------------------------
 // Photon Map Functions
@@ -445,6 +403,64 @@ void generatePhotonRay(out Ray ray)
     enterCloud(ray, ray.pos);
 }
 
+
+//---------------------------------------------------------
+// Cloud Scatter
+//---------------------------------------------------------
+
+// Update ray position based on scattering
+// Returns wether ray is still in the cloud or not
+bool findScatterPoint(inout Ray ray, inout bool firstScatter)
+{
+    vec3 exitPoint = vec3(0);
+    leaveCloud(ray, exitPoint);
+
+    float dist = distance(ray.pos, exitPoint);
+    float t = 0;
+    vec4 extinction = vec4(0);
+    vec3 currentPoint = vec3(0);
+    float zeta = 0;
+    float xi = 0;
+
+    // Loop until not null scatter or cloud left
+    do
+    {
+        zeta = generateRandomNumber();
+        t = t + -log(1 - zeta) / cloudProperties.maxExtinction;
+        if (t > dist)
+        {
+            return false; // Left the cloud
+        }
+
+        // Update the ray position
+        currentPoint = ray.pos + t * ray.dir;
+
+        // Recompute the local extinction after updating the shading context
+        extinction = sampleCloud(currentPoint) * cloudProperties.densityScaling / cloudProperties.baseScaling;
+        
+        xi = generateRandomNumber();
+        if (xi < extinction.x / cloudProperties.maxExtinction)
+        {
+            break;
+        }
+    } while (true);
+
+    // Advance ray to new position
+    ray.pos = currentPoint;
+
+    // Deposit Photon in the map
+    if(firstScatter)
+    {  
+       firstScatter = false;
+    }
+    else
+    {
+        depositPhoton(ray);        
+    }
+
+    xi = generateRandomNumber();
+    return xi < extinction.x * photonMapProperties.absorption;
+}
 //---------------------------------------------------------
 // Main
 //---------------------------------------------------------
@@ -453,8 +469,8 @@ void main()
     initializeRandom(
         pushConstants.seed +
         gl_GlobalInvocationID.x +
-        gl_GlobalInvocationID.y * gl_NumWorkGroups.x + 
-        gl_GlobalInvocationID.z * gl_NumWorkGroups.x * gl_NumWorkGroups.y
+        gl_GlobalInvocationID.y * gl_NumWorkGroups.x * 32 + 
+        gl_GlobalInvocationID.z * gl_NumWorkGroups.x * 32 * gl_NumWorkGroups.y * 32
         );
 
     Ray ray;
@@ -462,12 +478,12 @@ void main()
     // Get ray direction and volume entry point
     generatePhotonRay(ray);
 
-    // Photon tracer loop
-    while(findScatterPoint(ray))
-    {
-        // Deposit Photon in the map
-        depositPhoton(ray);
+    return;
 
+    // Photon tracer loop - keep scattering and depositing photons until absorbed or left the volume
+    bool firstScatter = true;
+    while(findScatterPoint(ray, firstScatter))
+    {
         // Get new scatter direction
         scatterRay(ray.dir);
     }

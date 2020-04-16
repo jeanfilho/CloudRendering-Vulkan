@@ -365,9 +365,9 @@ VkBufferViewCreateInfo initializers::BufferViewCreateInfo(VkBuffer buffer, VkFor
 	return info;
 }
 
-VkMemoryBarrier initializers::MemoryBarrier(VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask)
+VkMemoryBarrier initializers::MemBarrier(VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask)
 {
-	VkMemoryBarrier info;
+	VkMemoryBarrier info{};
 	info.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
 	info.srcAccessMask = srcAccessMask;
 	info.dstAccessMask = dstAccessMask;

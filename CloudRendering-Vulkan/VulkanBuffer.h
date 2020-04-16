@@ -5,7 +5,7 @@ class VulkanDevice;
 class VulkanBuffer
 {
 public:
-	VulkanBuffer(VulkanDevice* device, void* data, size_t elementSize, VkBufferUsageFlagBits usageFlags, size_t count = 1);
+	VulkanBuffer(VulkanDevice* device, void* data, size_t elementSize, VkBufferUsageFlags usageFlags, size_t count = 1);
 	~VulkanBuffer();
 
 	virtual void SetData();
@@ -15,7 +15,7 @@ public:
 	VkDeviceSize GetSize();
 
 private:
-	void AllocateBuffer(VkBufferUsageFlagBits usageFlags);
+	void AllocateBuffer(VkBufferUsageFlags usageFlags);
 
 private:
 	VulkanDevice* m_device;

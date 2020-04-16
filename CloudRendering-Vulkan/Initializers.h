@@ -72,5 +72,5 @@ namespace initializers
 
 	VkBufferViewCreateInfo BufferViewCreateInfo(VkBuffer buffer, VkFormat format, VkDeviceSize offset, VkDeviceSize range, VkBufferViewCreateFlags flags);
 
-	VkMemoryBarrier MemoryBarrier(VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask);
+	VkMemoryBarrier MemBarrier(VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask);
 }

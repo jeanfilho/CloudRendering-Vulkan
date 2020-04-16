@@ -160,7 +160,7 @@ private:
 };
 
 // Jarosz et al. - 2008 - Advanced Global Illumination using Photon Maps
-struct Photon // 
+struct Photon // 36 Bytes
 {
 	glm::vec3 position;
 	float phi;
@@ -171,10 +171,26 @@ struct Photon //
 struct PhotonMapProperties
 {
 	glm::vec4 lightDirection{ 1, -1, 0, 0 };
+
+private:
 	glm::vec4 bounds[2]{ {0,0,0,0}, {100,100,100,100} };
-	glm::uvec3 cellCount{ 100,100,100 };
-	float cellSize = 1;
+	glm::uvec3 cellCount{ 10, 10, 10 };
+	float cellSize = (bounds[1] - bounds[0]).x / cellCount.x;
 	const glm::uint photonSize = sizeof(Photon);
 	float stepSize = 1;
-	float sampleRadius = 1;
+	float sampleRadius = cellSize;
+	float absorption = 0.1f;
+
+public:
+	void SetBounds(glm::vec4 bounds[2])
+	{
+		this->bounds[0] = bounds[0];
+		this->bounds[1] = bounds[1];
+		cellSize = (bounds[1] - bounds[0]).x / cellCount.x;
+	}
+
+	uint32_t GetTotalSize() const
+	{
+		return cellCount.x * cellCount.y * cellCount.z;
+	}
 };
