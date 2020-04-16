@@ -399,7 +399,9 @@ void generatePhotonRay(out Ray ray)
     ray.dir = photonMapProperties.lightDirection.xyz;
     ray.pos = vec3(generateRandomNumber() * boundsDiff.x, generateRandomNumber() * boundsDiff.y, generateRandomNumber() * boundsDiff.z) + cloudProperties.bounds[0].xyz;
 
-    enterCloud(ray, ray.pos);
+    vec3 newPos;
+    enterCloud(ray, newPos);
+    ray.pos = newPos;
 }
 
 
@@ -458,7 +460,7 @@ bool interactWithMedium(inout Ray ray, inout bool firstScatter)
     }
 
     xi = generateRandomNumber();
-    return xi < extinction.x * photonMapProperties.absorption / cloudProperties.maxExtinction;
+    return xi > photonMapProperties.absorption;
 }
 //---------------------------------------------------------
 // Main
