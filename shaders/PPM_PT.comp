@@ -89,7 +89,7 @@ layout (binding = 4) uniform Parameters
 
 layout(binding = 5) buffer CollisionMap
 {
-    uint count[];
+    uint collisions[];
 };
 
 layout (push_constant) uniform PushConstants
@@ -335,10 +335,10 @@ float samplePhase(in const vec3 incomingDirection, in const vec3 sampleDirection
     return pdf;
 }
 
+
 // Scatter ray and evaluate radiance
-void scatterRay(inout vec3 rayDirection)
+void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
 {
-    vec3 sampleDirection;
     if(parameters.isotropic)
     {
         float xi = generateRandomNumber();
@@ -364,16 +364,14 @@ void scatterRay(inout vec3 rayDirection)
         float sinTheta = sqrt(max(0, 1.0f - cosTheta * cosTheta));
         vec3 t0, t1;
 
-        createOrthonormalBasis(rayDirection, t0, t1);
+        createOrthonormalBasis(incomingDirection, t0, t1);
         
         sampleDirection =
             sinTheta * cos(phi) * t0 +
             sinTheta * sin(phi) * t1 +
-            cosTheta * rayDirection;
+            cosTheta * incomingDirection;
     }
-    rayDirection = sampleDirection;
 }
-
 
 //---------------------------------------------------------
 // Photon Map Functions
@@ -381,7 +379,8 @@ void scatterRay(inout vec3 rayDirection)
 void depositPhoton(in const Ray ray)
 {
     ivec3 idx3D = ivec3(ray.pos / photonMapProperties.cellSize);
-    uint idx = idx3D.x + (idx3D.y + idx3D.z * photonMapProperties.cellCount.y) * photonMapProperties.cellCount.x;    
+    uint idx = idx3D.x + (idx3D.y + idx3D.z * photonMapProperties.cellCount.y) * photonMapProperties.cellCount.x;
+    idx *= photonMapProperties.photonSize;
 
     Photon photon;
     photon.position = ray.pos;
@@ -389,8 +388,8 @@ void depositPhoton(in const Ray ray)
     photon.phi = SphericalPhi(ray.dir);
     photon.theta = SphericalTheta(ray.dir);
 
-    photons[idx] = photon;
-    atomicAdd(count[idx], 1);
+    photons[idx] = photon;    
+    atomicAdd(collisions[idx], 1);
 }
 
 void generatePhotonRay(out Ray ray)
@@ -410,7 +409,7 @@ void generatePhotonRay(out Ray ray)
 
 // Update ray position based on scattering
 // Returns wether ray is still in the cloud or not
-bool findScatterPoint(inout Ray ray, inout bool firstScatter)
+bool interactWithMedium(inout Ray ray, inout bool firstScatter)
 {
     vec3 exitPoint = vec3(0);
     leaveCloud(ray, exitPoint);
@@ -459,7 +458,7 @@ bool findScatterPoint(inout Ray ray, inout bool firstScatter)
     }
 
     xi = generateRandomNumber();
-    return xi < extinction.x * photonMapProperties.absorption;
+    return xi < extinction.x * photonMapProperties.absorption / cloudProperties.maxExtinction;
 }
 //---------------------------------------------------------
 // Main
@@ -478,13 +477,14 @@ void main()
     // Get ray direction and volume entry point
     generatePhotonRay(ray);
 
-    return;
-
     // Photon tracer loop - keep scattering and depositing photons until absorbed or left the volume
     bool firstScatter = true;
-    while(findScatterPoint(ray, firstScatter))
+    vec3 newDir;
+    while(interactWithMedium(ray, firstScatter))
     {
         // Get new scatter direction
-        scatterRay(ray.dir);
+        scatterRay(ray.dir, newDir);
+
+        ray.dir = newDir;
     }
 }

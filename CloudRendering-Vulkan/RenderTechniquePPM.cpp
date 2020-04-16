@@ -231,8 +231,8 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 	// Photon Tracing
 	{
 		// Clear previous data
-		//vkCmdFillBuffer(commandBuffer, m_collisionMap->GetBuffer(), 0, m_collisionMap->GetSize(), 0);
-		//vkCmdFillBuffer(commandBuffer, m_photonMap->GetBuffer(), 0, m_photonMap->GetSize(), 0);
+		vkCmdFillBuffer(commandBuffer, m_collisionMap->GetBuffer(), 0, m_collisionMap->GetSize(), 0);
+		vkCmdFillBuffer(commandBuffer, m_photonMap->GetBuffer(), 0, m_photonMap->GetSize(), 0);
 
 		// Wait until tracing is complete to start the estimate
 		VkMemoryBarrier memoryBarrier = initializers::MemBarrier(VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_WRITE_BIT);

@@ -178,7 +178,7 @@ private:
 	float cellSize = (bounds[1] - bounds[0]).x / cellCount.x;
 	const glm::uint photonSize = sizeof(Photon);
 	float stepSize = 1;
-	float sampleRadius = cellSize;
+	float sampleRadius = 100;
 	float absorption = 0.1f;
 
 public:
