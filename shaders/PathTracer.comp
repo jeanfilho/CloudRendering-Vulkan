@@ -258,6 +258,15 @@ void createOrthonormalBasis(in const vec3 n, out vec3 xp, out vec3 yp)
   yp = vec3(c, 1.0-b, -sz*n.y);
 }
 
+float SphericalTheta(const vec3 v) {
+    return acos(clamp(v.z, -1, 1));
+}
+
+float SphericalPhi(const vec3 v) {
+    float p = atan(v.y, v.x) * 2;
+    return (p < 0) ? (p + 2 * PI) : p;
+}
+
 //---------------------------------------------------------
 // PNRG and Noise functions
 //---------------------------------------------------------
@@ -273,22 +282,15 @@ uint rand_xorshift()
 
 float generateRandomNumber()
 {
-	return rand_xorshift() * (1.0 / 4294967296.0);
+	return float(rand_xorshift()) / 4294967296.0f;
 }
 
 void initializeRandom(uint seed) {
-	rng_state = seed;
-	for (int i = 0; i < seed % 7 + 2; i++)
-	 	generateRandomNumber();
-}
-
-float SphericalTheta(const vec3 v) {
-    return acos(clamp(v.z, -1, 1));
-}
-
-float SphericalPhi(const vec3 v) {
-    float p = atan(v.y, v.x) * 2;
-    return (p < 0) ? (p + 2 * PI) : p;
+    rng_state = seed;
+    for (int i = 0; i < seed % 7 + 2; i++)
+	{
+        generateRandomNumber();
+    }    
 }
 
 //---------------------------------------------------------
@@ -412,7 +414,7 @@ bool findScatterPoint(inout Ray ray)
 //---------------------------------------------------------
 void main() 
 {
-    initializeRandom(pushConstants.seed + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * cameraProperties.halfWidth * 2);
+    initializeRandom(pushConstants.seed + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_WorkGroupSize.x * gl_NumWorkGroups.x);
 
     Ray ray;    
     vec4 result = vec4(0.0f);

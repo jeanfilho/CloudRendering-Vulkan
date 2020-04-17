@@ -341,6 +341,7 @@ vec4 samplePhotonMap(in const Ray ray)
             for(uint x = xMin; x < xMax; x++)
             {
                 currentIdx = x + (y + z * photonMapProperties.cellCount.y) * photonMapProperties.cellCount.x; 
+                currentIdx *= photonMapProperties.photonSize;
                 if(dot(photons[currentIdx].position, ray.pos) < sqrRadius)
                 {
                     photonDir = dirFromPolar(photons[currentIdx].theta, photons[currentIdx].phi);
