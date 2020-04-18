@@ -140,7 +140,7 @@ void SetCloudProperties(Grid3D<T>* grid)
 		grid->GetVoxelSize().y * grid->GetVoxelCount().y * g_cloudProperties.baseScaling,
 		grid->GetVoxelSize().z * grid->GetVoxelCount().z * g_cloudProperties.baseScaling };
 
-	g_cloudProperties.maxExtinction = grid->GetMajorant();
+	g_cloudProperties.maxExtinction = std::max(grid->GetMajorant(), 0.01f);
 	g_cloudProperties.voxelCount = glm::uvec4(grid->GetVoxelCount(), 0);
 	g_cloudProperties.bounds[0] = glm::vec4(
 		-cloudSize.x / 2,
@@ -354,6 +354,7 @@ void ClearSwapchain()
 
 	// Recreate result images. They should match the resolution of the screen
 	g_pathTracingTechnique->ClearFrameResources();
+	g_photonMappingTechnique->ClearFrameResources();
 
 	// Recreate framebuffers
 	for (auto& framebuffer : g_framebuffers)
@@ -652,7 +653,11 @@ void RenderLoop()
 	{
 		glfwPollEvents();
 		UpdateTime();
+#ifdef _DEBUG
+		g_pushConstants.seed = g_pushConstants.frameCount;
+#else
 		g_pushConstants.seed = std::rand();
+#endif
 
 		if (!glfwGetWindowAttrib(g_window, GLFW_ICONIFIED))
 		{

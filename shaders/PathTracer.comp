@@ -383,8 +383,8 @@ bool findScatterPoint(inout Ray ray)
     // Loop until not null scatter or cloud left
     do
     {
-        zeta = generateRandomNumber();
-        t = t + -log(1 - zeta) / cloudProperties.maxExtinction;
+        zeta = generateRandomNumber() * 0.999999f + 0.000001f;
+        t += -log(1 - zeta) / cloudProperties.maxExtinction;
         if (t > dist)
         {
             return false; // Left the cloud
