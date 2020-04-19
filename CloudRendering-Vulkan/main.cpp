@@ -255,7 +255,7 @@ void SetRenderTechnique(ERenderTechnique renderTechnique)
 
 void UpdateShadowVolumeLight()
 {
-	g_photonMapProperties.lightDirection = glm::vec4(g_UILightDirection, 1);
+	g_photonMapProperties.lightDirection = glm::normalize(glm::vec4(g_UILightDirection, 1));
 
 	g_shadowVolumeProperties.SetLightDirection(g_UILightDirection);
 	g_shadowVolumeProperties.SetOrigin(g_cloudProperties.bounds[0], g_cloudProperties.bounds[1]);
