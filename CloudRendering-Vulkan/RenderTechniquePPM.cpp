@@ -103,11 +103,11 @@ RenderTechniquePPM::~RenderTechniquePPM()
 	delete m_pipeline;
 	delete m_pipelineLayout;
 
+	FreePhotonMap();
 	ClearFrameResources();
-	DeallocatePhotonMap();
 }
 
-void RenderTechniquePPM::DeallocatePhotonMap()
+void RenderTechniquePPM::FreePhotonMap()
 {
 	if (m_photonMap)
 	{

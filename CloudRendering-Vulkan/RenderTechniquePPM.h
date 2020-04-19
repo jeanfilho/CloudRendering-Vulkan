@@ -12,7 +12,7 @@ public:
 	~RenderTechniquePPM();
 
 	void AllocatePhotonMap(VulkanBuffer* photonMapPropertiesBuffer);
-	void DeallocatePhotonMap();
+	void FreePhotonMap();
 
 
 	virtual void GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const override;

@@ -238,7 +238,7 @@ void SetRenderTechnique(ERenderTechnique renderTechnique)
 {
 	if (g_currentTechnique == g_photonMappingTechnique)
 	{
-		g_photonMappingTechnique->DeallocatePhotonMap();
+		g_photonMappingTechnique->FreePhotonMap();
 	}
 
 	switch (renderTechnique)
@@ -324,16 +324,17 @@ void UpdateCloudData()
 
 	{
 		g_cloudPropertiesBuffer->SetData();
+		g_photonMapPropertiesBuffer->SetData();
 
 		auto cloudBufferInfo = initializers::DescriptorBufferInfo(g_cloudPropertiesBuffer->GetBuffer(), 0, g_cloudPropertiesBuffer->GetSize());
 		auto cloudImageInfo = initializers::DescriptorImageInfo(g_cloudSampler->GetSampler(), g_cloudImageView->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
+		
 		for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 		{
 			g_pathTracingTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, i);
 			g_pathTracingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
 			g_photonMappingTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, i);
-			g_photonMappingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
+			g_photonMappingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);		
 		}
 		g_pathTracingTechnique->UpdateDescriptorSets();
 		g_photonMappingTechnique->UpdateDescriptorSets();
@@ -342,6 +343,10 @@ void UpdateCloudData()
 		g_shadowVolumeTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, 0);
 		g_shadowVolumeTechnique->UpdateDescriptorSets();
 	}
+
+	g_photonMappingTechnique->FreePhotonMap();
+	g_photonMappingTechnique->AllocatePhotonMap(g_photonMapPropertiesBuffer);
+	
 
 	UpdateShadowVolumeLight();
 }

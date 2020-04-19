@@ -134,54 +134,6 @@ int isNegativeSign(in float value)
     return int(value < 0);
 }
 
-//https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-box-intersection
-bool intersectCloud(in Ray ray, out vec3 intersectionPoint)
-{
-    float tmin, tmax, tymin, tymax, tzmin, tzmax;
-    vec3 invdir = 1 / ray.dir;
-    int sign[3] = {isNegativeSign(invdir.x), isNegativeSign(invdir.y), isNegativeSign(invdir.z)};
-
-    intersectionPoint = vec3(FLT_MAX);
- 
-    tmin = (cloudProperties.bounds[sign[0]].x - ray.pos.x) * invdir.x; 
-    tmax = (cloudProperties.bounds[1-sign[0]].x - ray.pos.x) * invdir.x; 
-    tymin = (cloudProperties.bounds[sign[1]].y - ray.pos.y) * invdir.y; 
-    tymax = (cloudProperties.bounds[1-sign[1]].y - ray.pos.y) * invdir.y; 
- 
-    if ((tmin > tymax) || (tymin > tmax)) 
-        return false; 
-    if (tymin > tmin) 
-        tmin = tymin; 
-    if (tymax < tmax) 
-        tmax = tymax; 
- 
-    tzmin = (cloudProperties.bounds[sign[2]].z - ray.pos.z) * invdir.z; 
-    tzmax = (cloudProperties.bounds[1-sign[2]].z - ray.pos.z) * invdir.z; 
- 
-    if ((tmin > tzmax) || (tzmin > tmax)) 
-        return false; 
-    if (tzmin > tmin) 
-        tmin = tzmin; 
-    if (tzmax < tmax) 
-        tmax = tzmax;
-
-    // We just want intersections in front of the ray
-    if(tmax < 0) // ray outside of the cloud, pointing away
-    {
-        return false;
-    }
-    else if(tmin < 0) // ray is inside the cloud
-    {
-        intersectionPoint = ray.pos + ray.dir * tmax;
-    }
-    else  // ray outside the cloud, pointing torwards it
-    {
-        intersectionPoint = ray.pos + ray.dir * tmin;
-    }
-
-    return true; 
-}
-
 void leaveCloud(in Ray ray, out vec3 intersectionPoint)
 {
     float tmin, tmax, tymin, tymax, tzmin, tzmax;
