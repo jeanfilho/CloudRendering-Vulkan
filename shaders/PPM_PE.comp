@@ -13,10 +13,11 @@ struct Ray
 
 struct Photon
 {
-	vec3 position;
-	float phi;
+	vec4 position;
 	vec4 power;
+	float phi;
 	float theta;
+    float __padding[2];
 };
 
 //---------------------------------------------------------
@@ -63,7 +64,7 @@ layout (binding = 1) uniform CameraProperties
 
 } cameraProperties;
 
-layout (binding = 2) buffer PhotonMap
+layout (binding = 2, std430) buffer PhotonMap
 {
     Photon photons[];
 };
@@ -102,9 +103,9 @@ layout (binding = 5) uniform PhotonMapProperties
 
 } photonMapProperties;
 
-layout (binding = 6) buffer CollisionMap
+layout (binding = 6, std430) buffer CollisionMap
 {
-    uint collisions[];
+    uvec4 collisions[];
 };
 
 layout (binding = 7) uniform sampler3D cloudSampler;
@@ -323,29 +324,31 @@ vec4 samplePhotonMap(in const Ray ray)
 {
     // Find all cells intersecting the cube radius
     vec3 gridPosition = ray.pos - photonMapProperties.bounds[0].xyz;
-    uint xMin = max(uint((gridPosition.x - photonMapProperties.sampleRadius) / photonMapProperties.cellSize), 0);
-    uint xMax = min(uint((gridPosition.x + photonMapProperties.sampleRadius) / photonMapProperties.cellSize), photonMapProperties.cellCount.x - 1);
-    uint yMin = max(uint((gridPosition.y - photonMapProperties.sampleRadius) / photonMapProperties.cellSize), 0);
-    uint yMax = min(uint((gridPosition.y + photonMapProperties.sampleRadius) / photonMapProperties.cellSize), photonMapProperties.cellCount.y - 1);
-    uint zMin = max(uint((gridPosition.z - photonMapProperties.sampleRadius) / photonMapProperties.cellSize), 0);
-    uint zMax = min(uint((gridPosition.z + photonMapProperties.sampleRadius) / photonMapProperties.cellSize), photonMapProperties.cellCount.z - 1);
+    int xMin = max(int((gridPosition.x - photonMapProperties.sampleRadius) / photonMapProperties.cellSize), 0);
+    int xMax = min(int((gridPosition.x + photonMapProperties.sampleRadius) / photonMapProperties.cellSize), int(photonMapProperties.cellCount.x - 1));
+    int yMin = max(int((gridPosition.y - photonMapProperties.sampleRadius) / photonMapProperties.cellSize), 0);
+    int yMax = min(int((gridPosition.y + photonMapProperties.sampleRadius) / photonMapProperties.cellSize), int(photonMapProperties.cellCount.y - 1));
+    int zMin = max(int((gridPosition.z - photonMapProperties.sampleRadius) / photonMapProperties.cellSize), 0);
+    int zMax = min(int((gridPosition.z + photonMapProperties.sampleRadius) / photonMapProperties.cellSize), int(photonMapProperties.cellCount.z - 1));
 
     vec3 photonDir;
     vec4 accumulatedFlux = vec4(0);
     uint currentIdx = 0;
-    float sqrRadius = photonMapProperties.sampleRadius;
-    for(uint z = zMin; z < zMax; z++)
+    float sqrRadius = photonMapProperties.sampleRadius * photonMapProperties.sampleRadius;
+    vec3 distVector;
+    for(int z = zMin; z <= zMax; z++)
     {
-        for(uint y = yMin; y < yMax; y++)
+        for(int y = yMin; y <= yMax; y++)
         {
-            for(uint x = xMin; x < xMax; x++)
+            for(int x = xMin; x <= xMax; x++)
             {
-                currentIdx = x + (y + z * photonMapProperties.cellCount.y) * photonMapProperties.cellCount.x; 
-                currentIdx *= photonMapProperties.photonSize;
-                if(dot(photons[currentIdx].position, ray.pos) < sqrRadius)
+                currentIdx = x + (y + z * photonMapProperties.cellCount.y) * photonMapProperties.cellCount.x;
+                distVector = photons[currentIdx].position.xyz - ray.pos;
+                if(dot(distVector, distVector) < sqrRadius)
                 {
                     photonDir = dirFromPolar(photons[currentIdx].theta, photons[currentIdx].phi);
-                    accumulatedFlux += samplePhase(ray.dir, photonDir) * photons[currentIdx].power * collisions[currentIdx]; // Russian roulette scaling
+                    //accumulatedFlux += samplePhase(ray.dir, photonDir) * photons[currentIdx].power * collisions[currentIdx].x; // Russian roulette scaling
+                    accumulatedFlux += photons[currentIdx].power * collisions[currentIdx].x; // Russian roulette scaling
                 }
             }
         }
@@ -378,8 +381,10 @@ void main()
         float maxDistance = distance(ray.pos, point);
         float currentDistance = 0;
         point = ray.pos;
+        
         float extinction = 0;
         float scatter = 0;
+
         vec4 directLighting = vec4(0);
         vec4 indirectLighting = vec4(0);
         do
@@ -391,23 +396,16 @@ void main()
             // Sample color
             extinction = sampleCloud(ray.pos) * cloudProperties.densityScaling / cloudProperties.baseScaling;
             scatter = extinction * (1 - photonMapProperties.absorption);
-            transmittance *= exp(-extinction * photonMapProperties.stepSize);
 
             {
                 // Sample Photon Map
-                if(extinction > 0.0001)
-                {
-                    indirectLighting = samplePhotonMap(ray) / extinction;
-                }
-                else
-                {
-                    indirectLighting = vec4(0);
-                }
+                indirectLighting = extinction > 0.000001f ? samplePhotonMap(ray) / extinction : vec4(0);
                 directLighting = sampleShadowVolume(ray.pos) * SUNLIGHT_COLOR * parameters.lightIntensity;
 
-                //result += transmittance * scatter * (directLighting + indirectLighting) * photonMapProperties.stepSize;
-                result += transmittance * scatter * (indirectLighting) * photonMapProperties.stepSize;
+                result += transmittance * scatter * (directLighting + indirectLighting) * photonMapProperties.stepSize;
+                //result += transmittance * scatter * (indirectLighting) * photonMapProperties.stepSize;
             }
+            transmittance *= exp(-extinction * photonMapProperties.stepSize);
 
         } while(currentDistance < maxDistance);
     }

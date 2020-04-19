@@ -162,10 +162,11 @@ private:
 // Jarosz et al. - 2008 - Advanced Global Illumination using Photon Maps
 struct Photon // 36 Bytes
 {
-	glm::vec3 position;
-	float phi;
+	glm::vec4 position;
 	glm::vec4 power;
+	float phi;
 	float theta;
+	float __padding[2];
 };
 
 struct PhotonMapProperties
@@ -174,19 +175,34 @@ struct PhotonMapProperties
 
 private:
 	glm::vec4 bounds[2]{ {0,0,0,0}, {100,100,100,100} };
-	glm::uvec3 cellCount{ 10, 10, 10 };
+	glm::uvec3 cellCount{ 100, 100, 100 };
+	//glm::uvec3 cellCount{ 10, 10, 10 };
 	float cellSize = (bounds[1] - bounds[0]).x / cellCount.x;
 	const glm::uint photonSize = sizeof(Photon);
-	float stepSize = 1;
-	float sampleRadius = 100;
+	float stepSize = 10;
+	float sampleRadius = 200;
 	float absorption = 0.1f;
 
 public:
 	void SetBounds(glm::vec4 bounds[2])
 	{
 		this->bounds[0] = bounds[0];
-		this->bounds[1] = bounds[1];
-		cellSize = (bounds[1] - bounds[0]).x / cellCount.x;
+		glm::vec4 cloudSize = (bounds[1] - bounds[0]);
+
+		int highestIdx = 0;
+		float highestValue = FLT_MIN;
+		for (int i = 0; i < 3; i++)
+		{
+			if (highestValue < glm::abs(cloudSize[i]))
+			{
+				highestIdx = i;
+				highestValue = glm::abs(cloudSize[i]);
+			}
+		}
+
+		this->bounds[1] = this->bounds[0] + glm::vec4(cloudSize[highestIdx]);
+		cellSize = (this->bounds[1] - this->bounds[0]).x / cellCount.x;
+		sampleRadius = cellSize;
 	}
 
 	uint32_t GetTotalSize() const

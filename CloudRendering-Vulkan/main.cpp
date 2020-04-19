@@ -135,6 +135,7 @@ void UpdateTime()
 template<typename T>
 void SetCloudProperties(Grid3D<T>* grid)
 {
+
 	glm::vec3 cloudSize{
 		grid->GetVoxelSize().x * grid->GetVoxelCount().x * g_cloudProperties.baseScaling,
 		grid->GetVoxelSize().y * grid->GetVoxelCount().y * g_cloudProperties.baseScaling,
@@ -328,13 +329,13 @@ void UpdateCloudData()
 
 		auto cloudBufferInfo = initializers::DescriptorBufferInfo(g_cloudPropertiesBuffer->GetBuffer(), 0, g_cloudPropertiesBuffer->GetSize());
 		auto cloudImageInfo = initializers::DescriptorImageInfo(g_cloudSampler->GetSampler(), g_cloudImageView->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-		
+
 		for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 		{
 			g_pathTracingTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, i);
 			g_pathTracingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
 			g_photonMappingTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, i);
-			g_photonMappingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);		
+			g_photonMappingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
 		}
 		g_pathTracingTechnique->UpdateDescriptorSets();
 		g_photonMappingTechnique->UpdateDescriptorSets();
@@ -346,7 +347,7 @@ void UpdateCloudData()
 
 	g_photonMappingTechnique->FreePhotonMap();
 	g_photonMappingTechnique->AllocatePhotonMap(g_photonMapPropertiesBuffer);
-	
+
 
 	UpdateShadowVolumeLight();
 }
@@ -796,7 +797,7 @@ bool InitializeVulkan()
 
 	for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-  		g_pathTracingTechnique->QueueUpdateParameters(parameterInfo, i); 
+		g_pathTracingTechnique->QueueUpdateParameters(parameterInfo, i);
 		g_photonMappingTechnique->QueueUpdateParameters(parameterInfo, i);
 		g_pathTracingTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
 		g_photonMappingTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);

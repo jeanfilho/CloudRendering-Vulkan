@@ -414,7 +414,7 @@ bool findScatterPoint(inout Ray ray)
 //---------------------------------------------------------
 void main() 
 {
-    initializeRandom(pushConstants.seed + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_WorkGroupSize.x * gl_NumWorkGroups.x);
+    initializeRandom(pushConstants.seed * 1000000000 + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_WorkGroupSize.x * gl_NumWorkGroups.x);
 
     Ray ray;    
     vec4 result = vec4(0.0f);

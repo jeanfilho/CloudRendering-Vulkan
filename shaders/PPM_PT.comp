@@ -13,10 +13,11 @@ struct Ray
 
 struct Photon
 {
-	vec3 position;
-	float phi;
+	vec4 position;
 	vec4 power;
+	float phi;
 	float theta;
+    float __padding[2];
 };
 
 //---------------------------------------------------------
@@ -47,7 +48,7 @@ const float BG_DISTS[5] =
 //---------------------------------------------------------
 // Descriptor Set
 //---------------------------------------------------------
-layout (binding = 0) buffer PhotonMap
+layout (binding = 0, std430) buffer PhotonMap
 {
     Photon photons[];
 };
@@ -87,9 +88,9 @@ layout (binding = 4) uniform Parameters
 
 } parameters;
 
-layout(binding = 5) buffer CollisionMap
+layout(binding = 5, std430) buffer CollisionMap
 {
-    uint collisions[];
+    uvec4 collisions[];
 };
 
 layout (push_constant) uniform PushConstants
@@ -328,27 +329,39 @@ void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
 //---------------------------------------------------------
 // Photon Map Functions
 //---------------------------------------------------------
+vec4 currentColor = SUNLIGHT_COLOR * parameters.lightIntensity;
 void depositPhoton(in const Ray ray)
 {
     ivec3 idx3D = ivec3((ray.pos - photonMapProperties.bounds[0].xyz )/ photonMapProperties.cellSize);
     uint idx = idx3D.x + (idx3D.y + idx3D.z * photonMapProperties.cellCount.y) * photonMapProperties.cellCount.x;
-    idx *= photonMapProperties.photonSize;
-
+    
     Photon photon;
-    photon.position = ray.pos;
-    photon.power = SUNLIGHT_COLOR * parameters.lightIntensity;
+    photon.position = vec4(ray.pos, 1);
+    photon.power = currentColor;
     photon.theta = SphericalTheta(ray.dir);
     photon.phi = SphericalPhi(ray.dir);
 
-    photons[idx] = photon;    
-    atomicAdd(collisions[idx], 1);
+    photons[idx] = photon;
+    atomicAdd(collisions[idx].x, 1);
 }
 
-void generatePhotonRay(out Ray ray)
+void generateSunRay(out Ray ray)
 {
     vec4 boundsDiff = cloudProperties.bounds[1] - cloudProperties.bounds[0];
 
     ray.dir = photonMapProperties.lightDirection.xyz;
+    ray.pos = vec3(generateRandomNumber() * boundsDiff.x, generateRandomNumber() * boundsDiff.y, generateRandomNumber() * boundsDiff.z) + cloudProperties.bounds[0].xyz;
+
+    vec3 newPos;
+    enterCloud(ray, newPos);
+    ray.pos = newPos;
+}
+
+void generateAmbientRay(out Ray ray)
+{
+    vec4 boundsDiff = cloudProperties.bounds[1] - cloudProperties.bounds[0];
+
+    ray.dir = normalize(vec3(generateRandomNumber(), generateRandomNumber(), generateRandomNumber()) * 2.0f - vec3(1.0f));
     ray.pos = vec3(generateRandomNumber() * boundsDiff.x, generateRandomNumber() * boundsDiff.y, generateRandomNumber() * boundsDiff.z) + cloudProperties.bounds[0].xyz;
 
     vec3 newPos;
@@ -420,15 +433,24 @@ bool interactWithMedium(inout Ray ray, inout bool firstScatter)
 //---------------------------------------------------------
 void main() 
 {
-    initializeRandom(pushConstants.seed + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x);
+    initializeRandom(pushConstants.seed * 1000000 + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x);
 
     // Get ray direction and volume entry point
     Ray ray;
-    generatePhotonRay(ray);
+    generateSunRay(ray);
 
     // Photon tracer loop - keep scattering and depositing photons until absorbed or left the volume
     bool firstScatter = true;
     vec3 newDir;
+    while(interactWithMedium(ray, firstScatter))
+    {
+        // Get new scatter direction
+        scatterRay(ray.dir, newDir);
+        ray.dir = newDir;
+    }
+
+    generateAmbientRay(ray);
+    currentColor = sampleBackground(-ray.dir) * parameters.lightIntensity * 3;
     while(interactWithMedium(ray, firstScatter))
     {
         // Get new scatter direction

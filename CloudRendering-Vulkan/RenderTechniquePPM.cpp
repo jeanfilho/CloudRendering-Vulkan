@@ -130,7 +130,7 @@ void RenderTechniquePPM::AllocatePhotonMap(VulkanBuffer* photonMapPropertiesBuff
 
 	VkBufferUsageFlags flags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 	m_photonMap = new VulkanBuffer(m_device, nullptr, sizeof(Photon), flags, bufferSize);
-	m_collisionMap = new VulkanBuffer(m_device, nullptr, sizeof(uint32_t), flags, bufferSize);
+	m_collisionMap = new VulkanBuffer(m_device, nullptr, sizeof(glm::uvec4), flags, bufferSize);
 
 	std::vector<VkWriteDescriptorSet> writes;
 	uint32_t setSize = static_cast<uint32_t>(m_descriptorSets.size() / 2);
