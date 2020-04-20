@@ -253,7 +253,7 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_ptPipelineLayout->GetPipelineLayout(), 0, setSize, m_descriptorSets.data(), 0, nullptr);
 
 		// Start compute shader
-		vkCmdDispatch(commandBuffer, 10, 10, 1);
+		vkCmdDispatch(commandBuffer, 5, 5, 1);
 	}
 
 	// Wait until tracing is complete to start the estimate

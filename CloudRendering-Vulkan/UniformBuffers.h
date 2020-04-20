@@ -181,7 +181,7 @@ private:
 	const glm::uint photonSize = sizeof(Photon);
 	float stepSize = 10;
 	float sampleRadius = 200;
-	float absorption = 0.1f;
+	float absorption = 0.0f;
 
 public:
 	void SetBounds(glm::vec4 bounds[2])

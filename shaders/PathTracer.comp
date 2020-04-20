@@ -447,7 +447,7 @@ void main()
             // Sample pdf between ray and light directions
             lightRay.pos = ray.pos ;
             lightRay.dir = shadowVolumeProperties.lightDirection.xyz;            
-            pdf = samplePhase(ray.dir, lightRay.dir);
+            pdf = samplePhase(-ray.dir, lightRay.dir);
 
             // Sample shadow volume and add direct light
             accumulatedDensity = sampleShadowVolume(lightRay.pos);

@@ -434,23 +434,29 @@ bool interactWithMedium(inout Ray ray, inout bool firstScatter)
 void main() 
 {
     initializeRandom(pushConstants.seed * 1000000 + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x);
+    uint emittedPhotons = gl_WorkGroupSize.y * gl_NumWorkGroups.y * gl_WorkGroupSize.x * gl_NumWorkGroups.x;
 
     // Get ray direction and volume entry point
+
     Ray ray;
-    generateSunRay(ray);
+    if(generateRandomNumber() < 0.5f)
+    {
+        generateSunRay(ray);
+        vec3 boundsDiff = (photonMapProperties.bounds[1] - photonMapProperties.bounds[0]).xyz;
+        float flux = abs(boundsDiff.x) * abs(boundsDiff.y) / emittedPhotons;
+        currentColor = SUNLIGHT_COLOR * parameters.lightIntensity * flux;
+    }
+    else
+    {
+        generateAmbientRay(ray);
+        float ambientFlux = 4 * PI * 1000*1000 / emittedPhotons;
+        currentColor = sampleBackground(-ray.dir) * parameters.lightIntensity * ambientFlux;
+    }
+    currentColor *= 2;
 
     // Photon tracer loop - keep scattering and depositing photons until absorbed or left the volume
     bool firstScatter = true;
     vec3 newDir;
-    while(interactWithMedium(ray, firstScatter))
-    {
-        // Get new scatter direction
-        scatterRay(ray.dir, newDir);
-        ray.dir = newDir;
-    }
-
-    generateAmbientRay(ray);
-    currentColor = sampleBackground(-ray.dir) * parameters.lightIntensity * 3;
     while(interactWithMedium(ray, firstScatter))
     {
         // Get new scatter direction

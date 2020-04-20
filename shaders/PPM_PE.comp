@@ -283,6 +283,30 @@ void leaveCloud(in Ray ray, out vec3 intersectionPoint)
 
 	intersectionPoint = ray.pos + ray.dir * tmax;
 }
+//---------------------------------------------------------
+// PNRG and Noise functions
+//---------------------------------------------------------
+uint rng_state = 0;
+uint rand_xorshift()
+{
+	// Xorshift algorithm from George Marsaglia's paper
+	rng_state ^= (rng_state << 13);
+	rng_state ^= (rng_state >> 17);
+	rng_state ^= (rng_state << 5);
+	return rng_state;
+}
+
+float generateRandomNumber()
+{
+	return float(rand_xorshift()) / 4294967296.0f;
+}
+
+void initializeRandom(uint seed) {
+	rng_state = seed;
+	for (int i = 0; i < seed % 7 + 2; i++)
+	 	generateRandomNumber();
+}
+
 
 //---------------------------------------------------------
 // Phase BSDF - Henyey-Greenstein
@@ -320,10 +344,10 @@ float samplePhase(in const vec3 incomingDirection, in const vec3 sampleDirection
 //---------------------------------------------------------
 // Photon map sampling with given ray pos and dor
 //---------------------------------------------------------
-vec4 samplePhotonMap(in const Ray ray)
+vec4 samplePhotonMap(in const vec3 pos, in const vec3 dir)
 {
     // Find all cells intersecting the cube radius
-    vec3 gridPosition = ray.pos - photonMapProperties.bounds[0].xyz;
+    vec3 gridPosition = pos - photonMapProperties.bounds[0].xyz;
     int xMin = max(int((gridPosition.x - photonMapProperties.sampleRadius) / photonMapProperties.cellSize), 0);
     int xMax = min(int((gridPosition.x + photonMapProperties.sampleRadius) / photonMapProperties.cellSize), int(photonMapProperties.cellCount.x - 1));
     int yMin = max(int((gridPosition.y - photonMapProperties.sampleRadius) / photonMapProperties.cellSize), 0);
@@ -343,12 +367,12 @@ vec4 samplePhotonMap(in const Ray ray)
             for(int x = xMin; x <= xMax; x++)
             {
                 currentIdx = x + (y + z * photonMapProperties.cellCount.y) * photonMapProperties.cellCount.x;
-                distVector = photons[currentIdx].position.xyz - ray.pos;
+                distVector = photons[currentIdx].position.xyz - pos;
                 if(dot(distVector, distVector) < sqrRadius)
                 {
                     photonDir = dirFromPolar(photons[currentIdx].theta, photons[currentIdx].phi);
-                    //accumulatedFlux += samplePhase(ray.dir, photonDir) * photons[currentIdx].power * collisions[currentIdx].x; // Russian roulette scaling
-                    accumulatedFlux += photons[currentIdx].power * collisions[currentIdx].x; // Russian roulette scaling
+                    accumulatedFlux += samplePhase(dir, photonDir) * photons[currentIdx].power * collisions[currentIdx].x; // Russian roulette scaling
+                    //accumulatedFlux += photons[currentIdx].power * collisions[currentIdx].x; // Russian roulette scaling
                 }
             }
         }
@@ -365,51 +389,48 @@ vec4 samplePhotonMap(in const Ray ray)
 //---------------------------------------------------------
 void main() 
 {
-    vec4 result = vec4(0.0f);
+    initializeRandom(pushConstants.seed * 1000000 + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x);
     ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
 
     // Get ray direction and volume entry point
     Ray ray;
-    float transmittance = 1;
+    vec3 endPoint;
     getCameraRay(pixelCoord, ray);
-
-    if(intersectCloud(ray, ray.pos))
+    vec4 result = sampleBackground(ray.dir);
+    if(intersectCloud(ray, endPoint))
     {
         // Ray marching loop
         vec3 point;
-        leaveCloud(ray, point);
+        leaveCloud(ray, ray.pos);
         float maxDistance = distance(ray.pos, point);
+        float maxStep = photonMapProperties.stepSize;
         float currentDistance = 0;
-        point = ray.pos;
-        
-        float extinction = 0;
-        float scatter = 0;
+        float attenuation = 0;
 
-        vec4 directLighting = vec4(0);
-        vec4 indirectLighting = vec4(0);
-        do
+        vec4 directScatter;
+        vec4 indirectScatter;
+        vec4 radiance = vec4(0);
+        vec3 currentPoint;
+        float currentStep;
+        float scatter;
+        float extinction;
+        while(currentDistance < maxDistance)
         {
-            // Advance ray
-            currentDistance += photonMapProperties.stepSize;
-            ray.pos = point + ray.dir * currentDistance;
-            
-            // Sample color
-            extinction = sampleCloud(ray.pos) * cloudProperties.densityScaling / cloudProperties.baseScaling;
-            scatter = extinction * (1 - photonMapProperties.absorption);
+            currentStep = photonMapProperties.stepSize + 10 *generateRandomNumber();
+            currentPoint = ray.pos - ray.dir * (currentDistance + currentStep);
+            extinction = sampleCloud(currentPoint) * cloudProperties.densityScaling / cloudProperties.baseScaling;
+            scatter = (1 - photonMapProperties.absorption) * extinction;
 
-            {
-                // Sample Photon Map
-                indirectLighting = extinction > 0.000001f ? samplePhotonMap(ray) / extinction : vec4(0);
-                directLighting = sampleShadowVolume(ray.pos) * SUNLIGHT_COLOR * parameters.lightIntensity;
+            attenuation = exp( - extinction * currentStep );            
+            indirectScatter = extinction > 0 ? samplePhotonMap(currentPoint, -ray.dir) / extinction : vec4(0);
+            directScatter = samplePhase(-ray.dir, shadowVolumeProperties.lightDirection.xyz) * sampleShadowVolume(currentPoint) * SUNLIGHT_COLOR * parameters.lightIntensity;
 
-                result += transmittance * scatter * (directLighting + indirectLighting) * photonMapProperties.stepSize;
-                //result += transmittance * scatter * (indirectLighting) * photonMapProperties.stepSize;
-            }
-            transmittance *= exp(-extinction * photonMapProperties.stepSize);
+            radiance = scatter * (indirectScatter + directScatter) + attenuation * result;
 
-        } while(currentDistance < maxDistance);
+            result = radiance;
+            currentDistance += currentStep;
+        } 
     }
-    result += transmittance * sampleBackground(ray.dir);
 
     // Accumulate result
     vec4 resultOld = imageLoad(resultImage, pixelCoord);

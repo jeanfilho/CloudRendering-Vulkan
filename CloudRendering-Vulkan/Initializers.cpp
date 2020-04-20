@@ -349,6 +349,7 @@ VkDescriptorImageInfo initializers::DescriptorImageInfo(VkSampler sampler, VkIma
 	info.sampler = sampler;
 	info.imageView = imageView;
 	info.imageLayout = imageLayout;
+
 	return info;
 }
 
@@ -400,6 +401,9 @@ VkSamplerCreateInfo initializers::SamplerCreateInfo()
 	info.maxAnisotropy = 1.0f;
 	info.magFilter = VK_FILTER_LINEAR;
 	info.minFilter = VK_FILTER_LINEAR;
+	info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+	info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+	info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
 	return info;
 }
 
