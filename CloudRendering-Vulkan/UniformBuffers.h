@@ -171,16 +171,15 @@ struct Photon // 36 Bytes
 
 struct PhotonMapProperties
 {
-	glm::vec4 lightDirection{ 1, -1, 0, 0 };
+	glm::vec4 lightDirection = glm::normalize(glm::vec4( 1,-1, 0,0));
 
 private:
 	glm::vec4 bounds[2]{ {0,0,0,0}, {100,100,100,100} };
 	glm::uvec3 cellCount{ 100, 100, 100 };
-	//glm::uvec3 cellCount{ 10, 10, 10 };
 	float cellSize = (bounds[1] - bounds[0]).x / cellCount.x;
 	const glm::uint photonSize = sizeof(Photon);
 	float stepSize = 10;
-	float sampleRadius = 200;
+	float sampleRadius = cellSize;
 	float absorption = 0.0f;
 
 public:

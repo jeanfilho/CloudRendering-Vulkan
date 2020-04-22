@@ -438,19 +438,22 @@ void main()
 
     // Get ray direction and volume entry point
 
-    Ray ray;
+    Ray ray = { vec3(0), vec3(0) };
+    vec3 boundsDiff = (photonMapProperties.bounds[1] - photonMapProperties.bounds[0]).xyz;
+    vec3 tangent = cross(vec3(1,0,0), photonMapProperties.lightDirection.xyz);
+    
+
+    float flux = abs(boundsDiff.x) * abs(boundsDiff.y) * .6f;
+    float ambientFlux = 4 * PI * 800 * 600;
     if(generateRandomNumber() < 0.5f)
     {
         generateSunRay(ray);
-        vec3 boundsDiff = (photonMapProperties.bounds[1] - photonMapProperties.bounds[0]).xyz;
-        float flux = abs(boundsDiff.x) * abs(boundsDiff.y) / emittedPhotons;
-        currentColor = SUNLIGHT_COLOR * parameters.lightIntensity * flux;
+        currentColor = SUNLIGHT_COLOR * parameters.lightIntensity * flux / emittedPhotons;
     }
     else
     {
         generateAmbientRay(ray);
-        float ambientFlux = 4 * PI * 1000*1000 / emittedPhotons;
-        currentColor = sampleBackground(-ray.dir) * parameters.lightIntensity * ambientFlux;
+        currentColor = sampleBackground(-ray.dir) * ambientFlux / emittedPhotons;
     }
     currentColor *= 2;
 

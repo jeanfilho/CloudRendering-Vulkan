@@ -12,8 +12,9 @@ VulkanInstance::VulkanInstance(const VulkanConfiguration& config)
 		m_extensions[i] = extensions[i];
 	}
 
+	//m_layers.push_back("VK_LAYER_LUNARG_api_dump");
+	m_layers.push_back("VK_LAYER_KHRONOS_validation");
 	m_extensions.push_back("VK_EXT_debug_report");
-	m_layers.push_back("VK_LAYER_LUNARG_standard_validation");
 	
 	VkApplicationInfo appInfo = initializers::ApplicationInfo(config);
 	VkInstanceCreateInfo instanceInfo = initializers::InstanceCreateInfo(appInfo, m_layers, m_extensions);
