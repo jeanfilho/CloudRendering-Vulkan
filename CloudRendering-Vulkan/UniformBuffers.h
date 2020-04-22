@@ -8,6 +8,7 @@ struct PushConstants
 	double  time = 0;
 	int seed = 100;
 	unsigned int frameCount = 0;
+	float pmRadius = 0;
 };
 
 struct CameraProperties
@@ -179,7 +180,6 @@ private:
 	float cellSize = (bounds[1] - bounds[0]).x / cellCount.x;
 	const glm::uint photonSize = sizeof(Photon);
 	float stepSize = 10;
-	float sampleRadius = cellSize;
 	float absorption = 0.0f;
 
 public:
@@ -201,7 +201,6 @@ public:
 
 		this->bounds[1] = this->bounds[0] + glm::vec4(cloudSize[highestIdx]);
 		cellSize = (this->bounds[1] - this->bounds[0]).x / cellCount.x;
-		sampleRadius = cellSize;
 	}
 
 	uint32_t GetTotalSize() const

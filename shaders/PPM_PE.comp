@@ -99,7 +99,6 @@ layout (binding = 5) uniform PhotonMapProperties
 	float cellSize;
 	uint photonSize;
     float stepSize;
-    float sampleRadius;
 	float absorption;
 
 } photonMapProperties;
@@ -130,6 +129,7 @@ layout (push_constant) uniform PushConstants
     double time;
     int seed;
     uint frameCount;
+    float pmRadius;
 } pushConstants;
 
 //---------------------------------------------------------
@@ -350,20 +350,20 @@ vec4 samplePhotonMap(in const vec3 pos, in const vec3 dir)
     // Find all cells intersecting the cube radius
     vec3 gridPosition = pos - photonMapProperties.bounds[0].xyz;
     
-    int xMin = int(max((gridPosition.x - photonMapProperties.sampleRadius) / photonMapProperties.cellSize, 0.0f));
-    int xMax = int(min((gridPosition.x + photonMapProperties.sampleRadius) / photonMapProperties.cellSize, photonMapProperties.cellCount.x - 1));
+    int xMin = max(int((gridPosition.x - pushConstants.pmRadius) / photonMapProperties.cellSize), 0);
+    int xMax = min(int((gridPosition.x + pushConstants.pmRadius) / photonMapProperties.cellSize), int(photonMapProperties.cellCount.x - 1));
 
-    int yMin = int(max((gridPosition.y - photonMapProperties.sampleRadius) / photonMapProperties.cellSize, 0.0f));
-    int yMax = int(min((gridPosition.y + photonMapProperties.sampleRadius) / photonMapProperties.cellSize, photonMapProperties.cellCount.y - 1));
+    int yMin = max(int((gridPosition.y - pushConstants.pmRadius) / photonMapProperties.cellSize), 0);
+    int yMax = min(int((gridPosition.y + pushConstants.pmRadius) / photonMapProperties.cellSize), int(photonMapProperties.cellCount.y - 1));
 
-    int zMin = int(max((gridPosition.z - photonMapProperties.sampleRadius) / photonMapProperties.cellSize, 0.0f));
-    int zMax = int(min((gridPosition.z + photonMapProperties.sampleRadius) / photonMapProperties.cellSize, photonMapProperties.cellCount.z - 1));
+    int zMin = max(int((gridPosition.z - pushConstants.pmRadius) / photonMapProperties.cellSize), 0);
+    int zMax = min(int((gridPosition.z + pushConstants.pmRadius) / photonMapProperties.cellSize), int(photonMapProperties.cellCount.z - 1));
 
     vec3 photonDir = vec3(0);
     vec4 accumulatedFlux = vec4(0);
     uint currentIdx = 0;
-    float sqrRadius = photonMapProperties.sampleRadius * photonMapProperties.sampleRadius;
     vec3 distVector = vec3(0);
+    float sqrRadius = pushConstants.pmRadius * pushConstants.pmRadius;
 
     for(uint z = zMin; z <= zMax; z++)
     {
@@ -384,7 +384,7 @@ vec4 samplePhotonMap(in const vec3 pos, in const vec3 dir)
     }
 
     // Divide by sphere volume - 1/sigma_s is not considered because it is cancelled out with the in-scattering equation
-    accumulatedFlux /= PI4_3 * photonMapProperties.sampleRadius * sqrRadius;
+    accumulatedFlux /= PI4_3 * pushConstants.pmRadius * sqrRadius;
 
     return accumulatedFlux;
 }
@@ -394,7 +394,7 @@ vec4 samplePhotonMap(in const vec3 pos, in const vec3 dir)
 //---------------------------------------------------------
 void main() 
 {
-    initializeRandom(pushConstants.seed * 100000000 + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x);
+    initializeRandom(pushConstants.seed * 1000000000 + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x);
     ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
 
     // Get ray direction and volume entry point
@@ -430,13 +430,13 @@ void main()
         {
 
             // Perform step
-            //currentStep = photonMapProperties.stepSize + 10 *generateRandomNumber();
-            currentStep = photonMapProperties.stepSize;
+            currentStep = photonMapProperties.stepSize + pushConstants.pmRadius *generateRandomNumber();
+            //currentStep = photonMapProperties.stepSize;
             currentPoint = ray.pos - ray.dir * (currentDistance + currentStep);
             currentDistance += currentStep;
             
             // Cloud properties at current point
-            extinction = sampleCloud(currentPoint);
+            extinction = sampleCloud(currentPoint) * cloudProperties.densityScaling / cloudProperties.baseScaling;
             albedo = (1 - photonMapProperties.absorption);
             scatter = albedo * extinction;
             
@@ -450,7 +450,7 @@ void main()
             indirectRadiance = albedo * samplePhotonMap(currentPoint, -ray.dir);
 
             // Final radiance estimate
-            attenuation = exp( -currentStep *  extinction * cloudProperties.densityScaling / cloudProperties.baseScaling);            
+            attenuation = exp( -currentStep *  extinction);            
             result = scatter * (directRadiance + indirectRadiance) * currentStep + attenuation * result;
         } 
     }

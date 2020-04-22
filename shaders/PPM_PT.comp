@@ -60,7 +60,6 @@ layout (binding = 1) uniform PhotonMapProperties
     float cellSize;
     uint photonSize;
 	float stepSize;
-	float sampleRadius;
 	float absorption;
     
 } photonMapProperties;
@@ -98,6 +97,7 @@ layout (push_constant) uniform PushConstants
     double time;
     int seed;
     uint frameCount;
+    float pmRadius;
 } pushConstants;
 
 //---------------------------------------------------------
@@ -443,7 +443,7 @@ void main()
     vec3 tangent = cross(vec3(1,0,0), photonMapProperties.lightDirection.xyz);
     
 
-    float flux = abs(boundsDiff.x) * abs(boundsDiff.y) * .6f;
+    float flux = abs(boundsDiff.x) * abs(boundsDiff.y) * .7f;
     float ambientFlux = 4 * PI * 800 * 600;
     if(generateRandomNumber() < 0.5f)
     {

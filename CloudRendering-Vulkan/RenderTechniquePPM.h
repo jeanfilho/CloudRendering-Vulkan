@@ -8,12 +8,11 @@ class VulkanBufferView;
 class RenderTechniquePPM : public RenderTechnique
 {
 public:
-	RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, const PhotonMapProperties* photonMapProperties, PushConstants* pushConstants);
+	RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, const PhotonMapProperties* photonMapProperties, PushConstants* pushConstants, float initialRadius);
 	~RenderTechniquePPM();
 
 	void AllocatePhotonMap(VulkanBuffer* photonMapPropertiesBuffer);
 	void FreePhotonMap();
-
 
 	virtual void GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const override;
 
@@ -33,6 +32,9 @@ public:
 	virtual void RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex);
 
 private:
+	void UpdateRadius(unsigned int frameNumber);
+
+private:
 	VulkanShaderModule* m_shader = nullptr;
 
 	VulkanShaderModule* m_ptShader = nullptr;
@@ -49,4 +51,7 @@ private:
 
 	std::vector<VulkanImage*> m_images;
 	std::vector<VulkanImageView*> m_imageViews;
+
+	const float m_initialRadius = 0;
+	const float m_alpha = .666666f;
 };

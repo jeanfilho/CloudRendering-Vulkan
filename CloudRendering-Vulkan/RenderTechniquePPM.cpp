@@ -5,11 +5,12 @@
 #include "VulkanBuffer.h"
 #include "VulkanBufferView.h"
 
-RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, const PhotonMapProperties* photonMapProperties, PushConstants* pushConstants) :
+RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, const PhotonMapProperties* photonMapProperties, PushConstants* pushConstants, float initialRadius) :
 	RenderTechnique(device, pushConstants),
 	m_swapchain(swapchain),
 	m_cameraProperties(cameraProperties),
-	m_photonMapProperties(photonMapProperties)
+	m_photonMapProperties(photonMapProperties),
+	m_initialRadius(initialRadius)
 {
 	// Photon Tracer
 	std::vector<char> photonTracerSPV;
@@ -231,6 +232,8 @@ void RenderTechniquePPM::QueueUpdateShadowVolumeSampler(VkDescriptorImageInfo& s
 
 void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex)
 {
+	UpdateRadius(m_pushConstants->frameCount);
+
 	uint32_t setSize = static_cast<uint32_t>(m_descriptorSets.size() / 2);
 
 	// Photon Tracing
@@ -300,4 +303,16 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 	blit.dstSubresource = layers;
 
 	vkCmdBlitImage(commandBuffer, m_images[currentFrame]->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_swapchain->GetSwapchainImages()[imageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+}
+
+void RenderTechniquePPM::UpdateRadius(unsigned int frameNumber)
+{
+	if (frameNumber == 0)
+	{
+		m_pushConstants->pmRadius = m_initialRadius;
+	}
+	else
+	{
+		m_pushConstants->pmRadius *= glm::pow((frameNumber - 1 + m_alpha) / (frameNumber), .33333f);
+	}
 }

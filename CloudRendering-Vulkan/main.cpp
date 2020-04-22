@@ -760,7 +760,7 @@ bool InitializeVulkan()
 	// Render Techniques
 	g_shadowVolumeTechnique = new RenderTechniqueSV(g_device, &g_shadowVolumeProperties, &g_pushConstants);
 	g_pathTracingTechnique = new RenderTechniquePT(g_device, g_swapchain, &g_cameraProperties, &g_pushConstants);
-	g_photonMappingTechnique = new RenderTechniquePPM(g_device, g_swapchain, &g_cameraProperties, &g_photonMapProperties, &g_pushConstants);
+	g_photonMappingTechnique = new RenderTechniquePPM(g_device, g_swapchain, &g_cameraProperties, &g_photonMapProperties, &g_pushConstants, 10);
 
 	// Compute Descriptor Pool
 	std::vector<VkDescriptorPoolSize> poolSizes =
