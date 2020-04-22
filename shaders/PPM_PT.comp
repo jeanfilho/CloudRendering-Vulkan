@@ -433,7 +433,7 @@ bool interactWithMedium(inout Ray ray, inout bool firstScatter)
 //---------------------------------------------------------
 void main() 
 {
-    initializeRandom(pushConstants.seed * 1000000 + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x);
+    initializeRandom(pushConstants.seed * 1000000000 + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x);
     uint emittedPhotons = gl_WorkGroupSize.y * gl_NumWorkGroups.y * gl_WorkGroupSize.x * gl_NumWorkGroups.x;
 
     // Get ray direction and volume entry point
