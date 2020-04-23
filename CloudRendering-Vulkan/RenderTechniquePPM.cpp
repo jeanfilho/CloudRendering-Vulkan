@@ -5,7 +5,7 @@
 #include "VulkanBuffer.h"
 #include "VulkanBufferView.h"
 
-RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, const PhotonMapProperties* photonMapProperties, PushConstants* pushConstants, float initialRadius) :
+RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, PhotonMapProperties* photonMapProperties, PushConstants* pushConstants, float initialRadius) :
 	RenderTechnique(device, pushConstants),
 	m_swapchain(swapchain),
 	m_cameraProperties(cameraProperties),
