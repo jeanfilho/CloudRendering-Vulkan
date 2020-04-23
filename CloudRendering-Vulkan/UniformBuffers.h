@@ -176,8 +176,8 @@ struct PhotonMapProperties
 
 private:
 	glm::vec4 bounds[2]{ {0,0,0,0}, {100,100,100,100} };
-	glm::uvec3 cellCount{ 100, 100, 100 };
-	float cellSize = (bounds[1] - bounds[0]).x / cellCount.x;
+	glm::uvec3 voxelCount{ 50, 50, 50 };
+	float voxelSize = (bounds[1] - bounds[0]).x / (voxelCount.x - 1);
 	const glm::uint photonSize = sizeof(Photon);
 	float stepSize = 10;
 	float absorption = 0.0f;
@@ -200,11 +200,11 @@ public:
 		}
 
 		this->bounds[1] = this->bounds[0] + glm::vec4(cloudSize[highestIdx]);
-		cellSize = (this->bounds[1] - this->bounds[0]).x / cellCount.x;
+		voxelSize = (this->bounds[1] - this->bounds[0]).x / (voxelCount.x - 1);
 	}
 
 	uint32_t GetTotalSize() const
 	{
-		return cellCount.x * cellCount.y * cellCount.z;
+		return voxelCount.x * voxelCount.y * voxelCount.z;
 	}
 };
