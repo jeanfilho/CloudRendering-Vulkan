@@ -291,10 +291,10 @@ vec4 currentColor = SUNLIGHT_COLOR * parameters.lightIntensity;
 void depositPhoton(in const vec3 pos, in const vec3 dir)
 {
     float halfCell = photonMapProperties.voxelSize/2.f;
-    vec3 normPos = (pos - photonMapProperties.bounds[0].xyz )/ photonMapProperties.voxelSize;
+    vec3 normPos = (pos - photonMapProperties.bounds[0].xyz)/ photonMapProperties.voxelSize;
     ivec3 idx3D = ivec3(normPos.x, normPos.y, normPos.z);
     int idx = idx3D.x + (idx3D.y + idx3D.z * photonMapProperties.voxelCount.y) * photonMapProperties.voxelCount.x;
-    
+        
     Photon photon;
     photon.position = vec4(pos, 0);
     photon.power = currentColor;
@@ -302,7 +302,8 @@ void depositPhoton(in const vec3 pos, in const vec3 dir)
     photon.phi = SphericalPhi(dir);
     
     uint offset = atomicAdd(collisions[idx].x, 1);
-    photons[idx + offset] = photon;
+    if(offset < 16)
+        photons[idx * 16 + offset] = photon;
 }
 
 void generateSunRay(out Ray ray)

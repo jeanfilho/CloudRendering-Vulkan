@@ -309,19 +309,21 @@ vec4 samplePhotonMap(in const vec3 pos, in const vec3 dir, in const float scatte
     // Find all cells intersecting the cube radius
     vec3 gridPosition = pos - photonMapProperties.bounds[0].xyz;
     
-    int xMin = max(int((gridPosition.x - pushConstants.pmRadius) / (photonMapProperties.voxelSize*1.1f)), 0);
-    int xMax = min(int((gridPosition.x + pushConstants.pmRadius) / (photonMapProperties.voxelSize*1.1f)), photonMapProperties.voxelCount.x - 1);
+    int xMin = max(int((gridPosition.x - pushConstants.pmRadius) / (photonMapProperties.voxelSize)), 0);
+    int xMax = min(int((gridPosition.x + pushConstants.pmRadius) / (photonMapProperties.voxelSize)), photonMapProperties.voxelCount.x - 1);
     
-    int yMin = max(int((gridPosition.y - pushConstants.pmRadius) / (photonMapProperties.voxelSize*1.1f)), 0);
-    int yMax = min(int((gridPosition.y + pushConstants.pmRadius) / (photonMapProperties.voxelSize*1.1f)), photonMapProperties.voxelCount.y - 1);
+    int yMin = max(int((gridPosition.y - pushConstants.pmRadius) / (photonMapProperties.voxelSize)), 0);
+    int yMax = min(int((gridPosition.y + pushConstants.pmRadius) / (photonMapProperties.voxelSize)), photonMapProperties.voxelCount.y - 1);
     
-    int zMin = max(int((gridPosition.z - pushConstants.pmRadius) / (photonMapProperties.voxelSize*1.1f)), 0);
-    int zMax = min(int((gridPosition.z + pushConstants.pmRadius) / (photonMapProperties.voxelSize*1.1f)), photonMapProperties.voxelCount.z - 1);
+    int zMin = max(int((gridPosition.z - pushConstants.pmRadius) / (photonMapProperties.voxelSize)), 0);
+    int zMax = min(int((gridPosition.z + pushConstants.pmRadius) / (photonMapProperties.voxelSize)), photonMapProperties.voxelCount.z - 1);
     
     int currentIdx = 0;
+    int offsettedIdx= 0;
     vec3 distVector = vec3(0);
     vec3 photonDir = vec3(0);
     vec4 accumulatedRadiance = vec4(0);
+    vec3 testPos = pos + photonMapProperties.voxelSize;
 
     float sqrRadius = pushConstants.pmRadius * pushConstants.pmRadius;
     for(int z = zMin; z <= zMax; z++)
@@ -330,14 +332,15 @@ vec4 samplePhotonMap(in const vec3 pos, in const vec3 dir, in const float scatte
         {
             for(int x = xMin; x <= xMax; x++)
             {
-                for(int i = 0; i < 16; i++)
-                {
-                    currentIdx = x + (y + z * photonMapProperties.voxelCount.y) * photonMapProperties.voxelCount.x;
-                    distVector = photons[currentIdx].position.xyz - pos;
+                currentIdx = x + (y + z * photonMapProperties.voxelCount.y) * photonMapProperties.voxelCount.x;
+                for(int i = 0; i < collisions[currentIdx].x; i++)
+                {                
+                    offsettedIdx = currentIdx * 16 + i;
+                    distVector = photons[offsettedIdx].position.xyz - pos;
                     if(dot(distVector, distVector) < sqrRadius)
                     {
-                        photonDir = dirFromPolar(photons[currentIdx].theta, photons[currentIdx].phi);
-                        accumulatedRadiance += samplePhase(dir, photonDir) * photons[currentIdx].power * collisions[currentIdx].x; // Russian roulette scaling
+                        photonDir = dirFromPolar(photons[offsettedIdx].theta, photons[offsettedIdx].phi);
+                        accumulatedRadiance += samplePhase(dir, photonDir) * photons[offsettedIdx].power;
                     }
                 }
             }
@@ -418,7 +421,8 @@ void main()
             // Final radiance estimate
             attenuation = exp( -currentStep *  extinction);      
             result *= attenuation;      
-            result += scatter * (directRadiance + indirectRadiance) * currentStep;            
+            //result += scatter * (directRadiance + indirectRadiance) * currentStep;            
+            result += scatter * (indirectRadiance) * currentStep;            
         } 
     }
 
