@@ -659,11 +659,8 @@ void RenderLoop()
 	{
 		glfwPollEvents();
 		UpdateTime();
-#ifdef _DEBUG
-		g_pushConstants.seed = g_pushConstants.frameCount;
-#else
+
 		g_pushConstants.seed = std::rand();
-#endif
 
 		if (!glfwGetWindowAttrib(g_window, GLFW_ICONIFIED))
 		{
@@ -861,7 +858,7 @@ bool InitializeGLFW()
 int main()
 {
 	// Seed random
-	std::srand(static_cast<unsigned int>(std::time(nullptr)));
+	std::srand(0);
 
 #ifdef _DEBUG
 	tests::RunTests();

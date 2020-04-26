@@ -48,7 +48,7 @@ const float BG_DISTS[5] =
 //---------------------------------------------------------
 // Descriptor Set
 //---------------------------------------------------------
-layout (binding = 0, std430) buffer PhotonMap
+layout (binding = 0, std430) restrict  buffer PhotonMap
 {
     Photon photons[];
 };
@@ -56,8 +56,8 @@ layout (binding = 1) uniform PhotonMapProperties
 {
 	vec4 lightDirection;
     vec4 bounds[2];
-    uvec3 cellCount;
-    float cellSize;
+    ivec3 voxelCount;
+    float voxelSize;
     uint photonSize;
 	float stepSize;
 	float absorption;
@@ -87,7 +87,7 @@ layout (binding = 4) uniform Parameters
 
 } parameters;
 
-layout(binding = 5, std430) buffer CollisionMap
+layout(binding = 5, std430) restrict buffer CollisionMap
 {
     uvec4 collisions[];
 };
@@ -114,10 +114,10 @@ vec4 sampleBackground(in vec3 dir)
     return col;
 }
 
-vec4 sampleCloud(in vec3 pos)
+float sampleCloud(in vec3 pos)
 {
     vec3 normalizedIdx = ((vec4(pos,0) - cloudProperties.bounds[0])/(cloudProperties.bounds[1] - cloudProperties.bounds[0])).xyz;
-    return vec4(texture(cloudSampler, normalizedIdx).x);
+    return texture(cloudSampler, normalizedIdx).x;
 }
 
 float average(in vec4 data)
@@ -135,21 +135,20 @@ int isNegativeSign(in float value)
     return int(value < 0);
 }
 
-void leaveCloud(in Ray ray, out vec3 intersectionPoint)
+bool intersectCloud(in Ray ray, out float tmax, out float tmin)
 {
-    float tmin, tmax, tymin, tymax, tzmin, tzmax;
+    float tymin = 0, tymax = 0, tzmin = 0, tzmax = 0;
     vec3 invdir = 1 / ray.dir;
     int sign[3] = {isNegativeSign(invdir.x), isNegativeSign(invdir.y), isNegativeSign(invdir.z)};
-
-    intersectionPoint = vec3(FLT_MAX);
  
     tmin = (cloudProperties.bounds[sign[0]].x - ray.pos.x) * invdir.x; 
     tmax = (cloudProperties.bounds[1-sign[0]].x - ray.pos.x) * invdir.x; 
+
     tymin = (cloudProperties.bounds[sign[1]].y - ray.pos.y) * invdir.y; 
     tymax = (cloudProperties.bounds[1-sign[1]].y - ray.pos.y) * invdir.y; 
  
     if ((tmin > tymax) || (tymin > tmax)) 
-        return; 
+        return false; 
     if (tymin > tmin) 
         tmin = tymin; 
     if (tymax < tmax) 
@@ -158,57 +157,14 @@ void leaveCloud(in Ray ray, out vec3 intersectionPoint)
     tzmin = (cloudProperties.bounds[sign[2]].z - ray.pos.z) * invdir.z; 
     tzmax = (cloudProperties.bounds[1-sign[2]].z - ray.pos.z) * invdir.z; 
  
-    //if ((tmin > tzmax) || (tzmin > tmax)) 
-    //    return false; 
-    if (tzmin > tmin) 
-        tmin = tzmin; 
+    if ((tmin > tzmax) || (tzmin > tmax)) 
+        return false;
+    if (tzmin > tmin)
+        tmin = tzmin;
     if (tzmax < tmax) 
         tmax = tzmax;
 
-	intersectionPoint = ray.pos + ray.dir * tmax;
-}
-
-void enterCloud(in Ray ray, out vec3 intersectionPoint)
-{
-    float tmin, tmax, tymin, tymax, tzmin, tzmax;
-    vec3 invdir = 1 / ray.dir;
-    int sign[3] = {isNegativeSign(invdir.x), isNegativeSign(invdir.y), isNegativeSign(invdir.z)};
-
-    intersectionPoint = vec3(FLT_MAX);
- 
-    tmin = (cloudProperties.bounds[sign[0]].x - ray.pos.x) * invdir.x; 
-    tmax = (cloudProperties.bounds[1-sign[0]].x - ray.pos.x) * invdir.x; 
-    tymin = (cloudProperties.bounds[sign[1]].y - ray.pos.y) * invdir.y; 
-    tymax = (cloudProperties.bounds[1-sign[1]].y - ray.pos.y) * invdir.y; 
- 
-    if ((tmin > tymax) || (tymin > tmax)) 
-        return; 
-    if (tymin > tmin) 
-        tmin = tymin; 
-    if (tymax < tmax) 
-        tmax = tymax; 
- 
-    tzmin = (cloudProperties.bounds[sign[2]].z - ray.pos.z) * invdir.z; 
-    tzmax = (cloudProperties.bounds[1-sign[2]].z - ray.pos.z) * invdir.z; 
- 
-    //if ((tmin > tzmax) || (tzmin > tmax)) 
-    //    return false; 
-    if (tzmin > tmin) 
-        tmin = tzmin; 
-    if (tzmax < tmax) 
-        tmax = tzmax;
-
-	intersectionPoint = ray.pos + ray.dir * tmin;
-}
-
-bool isInCloud(in vec3 point)
-{
-    return  point.x > cloudProperties.bounds[0].x && 
-            point.y > cloudProperties.bounds[0].y && 
-            point.z > cloudProperties.bounds[0].z && 
-            point.x < cloudProperties.bounds[1].x && 
-            point.y < cloudProperties.bounds[1].y && 
-            point.z < cloudProperties.bounds[1].z;
+    return true; 
 }
 
 // https://www.shadertoy.com/view/lldGRM
@@ -252,7 +208,9 @@ float generateRandomNumber()
 void initializeRandom(uint seed) {
 	rng_state = seed;
 	for (int i = 0; i < seed % 7 + 2; i++)
-	 	generateRandomNumber();
+	{
+        generateRandomNumber();
+    }
 }
 
 //---------------------------------------------------------
@@ -330,19 +288,21 @@ void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
 // Photon Map Functions
 //---------------------------------------------------------
 vec4 currentColor = SUNLIGHT_COLOR * parameters.lightIntensity;
-void depositPhoton(in const Ray ray)
+void depositPhoton(in const vec3 pos, in const vec3 dir)
 {
-    ivec3 idx3D = ivec3((ray.pos - photonMapProperties.bounds[0].xyz )/ photonMapProperties.cellSize);
-    uint idx = idx3D.x + (idx3D.y + idx3D.z * photonMapProperties.cellCount.y) * photonMapProperties.cellCount.x;
+    float halfCell = photonMapProperties.voxelSize/2.f;
+    vec3 normPos = (pos - photonMapProperties.bounds[0].xyz )/ photonMapProperties.voxelSize;
+    ivec3 idx3D = ivec3(normPos.x, normPos.y, normPos.z);
+    int idx = idx3D.x + (idx3D.y + idx3D.z * photonMapProperties.voxelCount.y) * photonMapProperties.voxelCount.x;
     
     Photon photon;
-    photon.position = vec4(ray.pos, 1);
+    photon.position = vec4(pos, 0);
     photon.power = currentColor;
-    photon.theta = SphericalTheta(ray.dir);
-    photon.phi = SphericalPhi(ray.dir);
-
-    photons[idx] = photon;
-    atomicAdd(collisions[idx].x, 1);
+    photon.theta = SphericalTheta(dir);
+    photon.phi = SphericalPhi(dir);
+    
+    uint offset = atomicAdd(collisions[idx].x, 1);
+    photons[idx + offset] = photon;
 }
 
 void generateSunRay(out Ray ray)
@@ -350,11 +310,11 @@ void generateSunRay(out Ray ray)
     vec4 boundsDiff = cloudProperties.bounds[1] - cloudProperties.bounds[0];
 
     ray.dir = photonMapProperties.lightDirection.xyz;
-    ray.pos = vec3(generateRandomNumber() * boundsDiff.x, generateRandomNumber() * boundsDiff.y, generateRandomNumber() * boundsDiff.z) + cloudProperties.bounds[0].xyz;
+    ray.pos = boundsDiff.xyz/2;
 
-    vec3 newPos;
-    enterCloud(ray, newPos);
-    ray.pos = newPos;
+    float tmax, tmin;
+    intersectCloud(ray, tmax, tmin);
+    ray.pos = ray.pos + ray.dir * tmin;
 }
 
 void generateAmbientRay(out Ray ray)
@@ -362,13 +322,12 @@ void generateAmbientRay(out Ray ray)
     vec4 boundsDiff = cloudProperties.bounds[1] - cloudProperties.bounds[0];
 
     ray.dir = normalize(vec3(generateRandomNumber(), generateRandomNumber(), generateRandomNumber()) * 2.0f - vec3(1.0f));
-    ray.pos = vec3(generateRandomNumber() * boundsDiff.x, generateRandomNumber() * boundsDiff.y, generateRandomNumber() * boundsDiff.z) + cloudProperties.bounds[0].xyz;
+    ray.pos = vec3(generateRandomNumber() * boundsDiff.x, generateRandomNumber() * boundsDiff.y, generateRandomNumber() * boundsDiff.z) + cloudProperties.bounds[0].xyz;    
 
-    vec3 newPos;
-    enterCloud(ray, newPos);
-    ray.pos = newPos;
+    float tmax, tmin;
+    intersectCloud(ray, tmax, tmin);
+    ray.pos = ray.pos + ray.dir * tmin;
 }
-
 
 //---------------------------------------------------------
 // Cloud Interaction
@@ -378,12 +337,16 @@ void generateAmbientRay(out Ray ray)
 // Returns wether ray should terminate or not
 bool interactWithMedium(inout Ray ray, inout bool firstScatter)
 {
-    vec3 exitPoint = vec3(0);
-    leaveCloud(ray, exitPoint);
+    float tmax, tmin;
+    if(!intersectCloud(ray, tmax, tmin))
+    {
+        return false;
+    }
 
+    vec3 exitPoint = ray.pos + ray.dir * tmax;
     float dist = distance(ray.pos, exitPoint);
     float t = 0;
-    vec4 extinction = vec4(0);
+    float extinction = 0;
     vec3 currentPoint = vec3(0);
     float zeta = 0;
     float xi = 0;
@@ -391,8 +354,8 @@ bool interactWithMedium(inout Ray ray, inout bool firstScatter)
     // Loop until not null scatter or cloud left
     do
     {
-        zeta = generateRandomNumber() * 0.999999f + 0.000001f;
-        t += -log(1.0f - zeta) / cloudProperties.maxExtinction;
+        zeta = generateRandomNumber();
+        t += -log(zeta) / (cloudProperties.maxExtinction * cloudProperties.densityScaling / cloudProperties.baseScaling);
         if (t > dist)
         {
             return false; // Left the cloud
@@ -401,11 +364,11 @@ bool interactWithMedium(inout Ray ray, inout bool firstScatter)
         // Update the ray position
         currentPoint = ray.pos + t * ray.dir;
 
-        // Recompute the local extinction after updating the shading context
-        extinction = sampleCloud(currentPoint) * cloudProperties.densityScaling / cloudProperties.baseScaling;
+        // Get the normalized extinction
+        extinction = sampleCloud(currentPoint);
         
         xi = generateRandomNumber();
-        if (xi < extinction.x / cloudProperties.maxExtinction)
+        if (xi < extinction / cloudProperties.maxExtinction)
         {
             break;
         }
@@ -416,12 +379,12 @@ bool interactWithMedium(inout Ray ray, inout bool firstScatter)
 
     // Deposit Photon in the map
     if(firstScatter)
-    {  
+    {
        firstScatter = false;
     }
     else
     {
-        depositPhoton(ray);        
+        depositPhoton(currentPoint, ray.dir);        
     }
 
     xi = generateRandomNumber();
@@ -433,17 +396,19 @@ bool interactWithMedium(inout Ray ray, inout bool firstScatter)
 //---------------------------------------------------------
 void main() 
 {
-    initializeRandom(pushConstants.seed * 1000000000 + gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x);
+    if(cloudProperties.densityScaling <= 0)
+    {
+        return;
+    }
+
+    initializeRandom(pushConstants.seed * (gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x));
     uint emittedPhotons = gl_WorkGroupSize.y * gl_NumWorkGroups.y * gl_WorkGroupSize.x * gl_NumWorkGroups.x;
 
     // Get ray direction and volume entry point
-
     Ray ray = { vec3(0), vec3(0) };
     vec3 boundsDiff = (photonMapProperties.bounds[1] - photonMapProperties.bounds[0]).xyz;
-    vec3 tangent = cross(vec3(1,0,0), photonMapProperties.lightDirection.xyz);
-    
 
-    float flux = abs(boundsDiff.x) * abs(boundsDiff.y) * .7f;
+    float flux = abs(boundsDiff.x) * abs(boundsDiff.y) * .1f;
     float ambientFlux = 4 * PI * 800 * 600;
     if(generateRandomNumber() < 0.5f)
     {
@@ -459,7 +424,7 @@ void main()
 
     // Photon tracer loop - keep scattering and depositing photons until absorbed or left the volume
     bool firstScatter = true;
-    vec3 newDir;
+    vec3 newDir = vec3(0);
     while(interactWithMedium(ray, firstScatter))
     {
         // Get new scatter direction

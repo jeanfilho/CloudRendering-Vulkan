@@ -12,6 +12,8 @@ RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* sw
 	m_photonMapProperties(photonMapProperties),
 	m_initialRadius(initialRadius)
 {
+	m_pushConstants->pmRadius = m_initialRadius;
+
 	// Photon Tracer
 	std::vector<char> photonTracerSPV;
 	utilities::ReadFile("../shaders/PPM_PT.comp.spv", photonTracerSPV);
@@ -130,7 +132,7 @@ void RenderTechniquePPM::AllocatePhotonMap(VulkanBuffer* photonMapPropertiesBuff
 	uint32_t bufferSize = m_photonMapProperties->GetTotalSize();
 
 	VkBufferUsageFlags flags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	m_photonMap = new VulkanBuffer(m_device, nullptr, sizeof(Photon), flags, bufferSize);
+	m_photonMap = new VulkanBuffer(m_device, nullptr, sizeof(Photon)*16, flags, bufferSize);
 	m_collisionMap = new VulkanBuffer(m_device, nullptr, sizeof(glm::uvec4), flags, bufferSize);
 
 	std::vector<VkWriteDescriptorSet> writes;
@@ -239,8 +241,8 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 	// Photon Tracing
 	{
 		// Clear previous data
-		vkCmdFillBuffer(commandBuffer, m_collisionMap->GetBuffer(), 0, m_collisionMap->GetSize(), 0);
 		vkCmdFillBuffer(commandBuffer, m_photonMap->GetBuffer(), 0, m_photonMap->GetSize(), 0);
+		vkCmdFillBuffer(commandBuffer, m_collisionMap->GetBuffer(), 0, m_collisionMap->GetSize(), 0);
 
 		// Wait until tracing is complete to start the estimate
 		VkMemoryBarrier memoryBarrier = initializers::MemBarrier(VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_WRITE_BIT);

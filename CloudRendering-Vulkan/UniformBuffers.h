@@ -139,7 +139,7 @@ public:
 	void SetOrigin(glm::vec3 lowerBound, glm::vec3 upperBound)
 	{
 		float sphereRadius = glm::distance(lowerBound, upperBound) / 2.f;
-		voxelSize = (2 * sphereRadius) / voxelAxisCount;
+		voxelSize = (2 * sphereRadius) / (voxelAxisCount - 1); // Samples are considered points on grid
 
 		UpdateOrigin(sphereRadius, (lowerBound + upperBound) / 2.f);
 	}
@@ -176,10 +176,10 @@ struct PhotonMapProperties
 
 private:
 	glm::vec4 bounds[2]{ {0,0,0,0}, {100,100,100,100} };
-	glm::uvec3 voxelCount{ 50, 50, 50 };
+	glm::ivec3 voxelCount{ 50, 50, 50 };
 	float voxelSize = (bounds[1] - bounds[0]).x / voxelCount.x;
 	const glm::uint photonSize = sizeof(Photon);
-	float stepSize = 10;
+	float stepSize = 20;
 	float absorption = 0.0f;
 
 public:
@@ -200,7 +200,7 @@ public:
 		}
 
 		this->bounds[1] = this->bounds[0] + glm::vec4(cloudSize[highestIdx]);
-		voxelSize = (this->bounds[1] - this->bounds[0]).x / voxelCount.x;
+		voxelSize = (this->bounds[1] - this->bounds[0]).x / voxelCount.x; // Samples are considered "cells" 
 	}
 
 	uint32_t GetTotalSize() const
