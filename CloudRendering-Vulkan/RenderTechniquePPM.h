@@ -53,5 +53,5 @@ private:
 	std::vector<VulkanImageView*> m_imageViews;
 
 	const float m_initialRadius = 0;
-	const float m_alpha = .6666f;
+	const float m_alpha = .8f;
 };

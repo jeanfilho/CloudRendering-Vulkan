@@ -422,7 +422,7 @@ void main()
         generateAmbientRay(ray);
         currentColor = sampleBackground(-ray.dir) * ambientFlux / emittedPhotons;
     }
-    currentColor *= 2 * 10;
+    currentColor *= 2 * 30;
 
     // Photon tracer loop - keep scattering and depositing photons until absorbed or left the volume
     bool firstScatter = true;

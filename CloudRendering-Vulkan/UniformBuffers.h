@@ -179,7 +179,7 @@ private:
 	glm::ivec3 voxelCount{ 100, 100, 100 };
 	float voxelSize = (bounds[1] - bounds[0]).x / voxelCount.x;
 	const glm::uint photonSize = sizeof(Photon);
-	float stepSize = 20;
+	float stepSize = 10;
 	float absorption = 0.0f;
 
 public:
