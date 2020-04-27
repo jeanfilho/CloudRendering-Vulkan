@@ -282,6 +282,8 @@ void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
             sinTheta * sin(phi) * t1 +
             cosTheta * incomingDirection;
     }
+
+    sampleDirection = normalize(sampleDirection);
 }
 
 //---------------------------------------------------------
@@ -290,7 +292,6 @@ void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
 vec4 currentColor = SUNLIGHT_COLOR * parameters.lightIntensity;
 void depositPhoton(in const vec3 pos, in const vec3 dir)
 {
-    float halfCell = photonMapProperties.voxelSize/2.f;
     vec3 normPos = (pos - photonMapProperties.bounds[0].xyz)/ photonMapProperties.voxelSize;
     ivec3 idx3D = ivec3(normPos.x, normPos.y, normPos.z);
     int idx = idx3D.x + (idx3D.y + idx3D.z * photonMapProperties.voxelCount.y) * photonMapProperties.voxelCount.x;
@@ -302,8 +303,8 @@ void depositPhoton(in const vec3 pos, in const vec3 dir)
     photon.phi = SphericalPhi(dir);
     
     uint offset = atomicAdd(collisions[idx].x, 1);
-    if(offset < 16)
-        photons[idx * 16 + offset] = photon;
+    if(offset < 32)
+        photons[idx * 32 + offset] = photon;
 }
 
 void generateSunRay(out Ray ray)
@@ -311,7 +312,7 @@ void generateSunRay(out Ray ray)
     vec4 boundsDiff = cloudProperties.bounds[1] - cloudProperties.bounds[0];
 
     ray.dir = photonMapProperties.lightDirection.xyz;
-    ray.pos = boundsDiff.xyz/2;
+    ray.pos = vec3(generateRandomNumber() * boundsDiff.x, generateRandomNumber() * boundsDiff.y, generateRandomNumber() * boundsDiff.z) + cloudProperties.bounds[0].xyz;  
 
     float tmax, tmin;
     intersectCloud(ray, tmax, tmin);
@@ -409,9 +410,9 @@ void main()
     Ray ray = { vec3(0), vec3(0) };
     vec3 boundsDiff = (photonMapProperties.bounds[1] - photonMapProperties.bounds[0]).xyz;
 
-    float flux = abs(boundsDiff.x) * abs(boundsDiff.y) * .1f;
-    float ambientFlux = 4 * PI * 800 * 600;
-    if(generateRandomNumber() < 0.5f)
+    float flux = abs(boundsDiff.x) * abs(boundsDiff.z) * .01f;
+    float ambientFlux = 800 * 600;
+    if(generateRandomNumber() < .5f)
     {
         generateSunRay(ray);
         currentColor = SUNLIGHT_COLOR * parameters.lightIntensity * flux / emittedPhotons;
@@ -421,7 +422,7 @@ void main()
         generateAmbientRay(ray);
         currentColor = sampleBackground(-ray.dir) * ambientFlux / emittedPhotons;
     }
-    currentColor *= 2;
+    currentColor *= 2 * 10;
 
     // Photon tracer loop - keep scattering and depositing photons until absorbed or left the volume
     bool firstScatter = true;

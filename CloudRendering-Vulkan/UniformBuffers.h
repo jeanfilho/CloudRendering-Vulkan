@@ -176,7 +176,7 @@ struct PhotonMapProperties
 
 private:
 	glm::vec4 bounds[2]{ {0,0,0,0}, {100,100,100,100} };
-	glm::ivec3 voxelCount{ 50, 50, 50 };
+	glm::ivec3 voxelCount{ 100, 100, 100 };
 	float voxelSize = (bounds[1] - bounds[0]).x / voxelCount.x;
 	const glm::uint photonSize = sizeof(Photon);
 	float stepSize = 20;
