@@ -424,8 +424,7 @@ void main()
             // Final radiance estimate
             attenuation = exp( -currentStep *  extinction);      
             result *= attenuation;      
-            result += scatter * (directRadiance + indirectRadiance) * currentStep;            
-            //result += scatter * (indirectRadiance) * currentStep;
+            result += scatter * (directRadiance + indirectRadiance) * currentStep;
         } 
     }
 
