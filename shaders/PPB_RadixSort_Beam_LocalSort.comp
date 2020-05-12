@@ -82,7 +82,7 @@ void main()
     uint writeOffset = 0;
     uint readOffset = 0;
     uint iteration = 0;
-    uint mask = 1 << baseShift;
+    uint mask = 15 << baseShift;
     while(iteration < 4)
     {
         // Count 1-bit split histogram
@@ -124,7 +124,7 @@ void main()
     uint maskedIdx = 0;
     for(uint i = startIdx; i < endIdx; i++)
     {
-        maskedIdx = temp[readOffset + i].mortonCode & (15 << baseShift);
+        maskedIdx = temp[readOffset + i].mortonCode & mask;
         maskedIdx = maskedIdx >> baseShift;
         atomicAdd(localHistogram[maskedIdx], 1);
     }

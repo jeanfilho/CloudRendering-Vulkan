@@ -5,19 +5,17 @@ layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 // Structs
 //---------------------------------------------------------
 
-struct PhotonBeam
+struct Pair
 {
-    uint mortonCode;
-	vec3 startPos;
-    float radius;
-    vec3 endPos;
-	vec4 power;
+    uint beamIdx;
+    uint level;
+    uint __padding[2];
 };
 
 struct SortElement
 {
     uint idx;
-    uint mortonCode;
+    uint level;
 };
 
 //---------------------------------------------------------
@@ -32,13 +30,13 @@ const uint ELEMENTS_PER_WORK_GROUP = ELEMENTS_PER_THREAD * gl_WorkGroupSize.x;
 layout (binding = 0, std430) restrict buffer PhotonBeams
 {
     uvec4 beamCount;
-    PhotonBeam photonBeams[];
+    Pair pairs[];
 };
 
 layout (binding = 1, std430) restrict buffer SortedPhotonBeams
 {
     uvec4 sortedBeamCount;
-    PhotonBeam sortedPhotonBeams[];
+    Pair sortedPairs[];
 };
 
 layout (binding = 2, std430) restrict buffer Histogram16b
@@ -74,7 +72,7 @@ void main()
     for(uint i = startIdx; i < endIdx; i++)
     {
         temp[i].idx = workGroupOffset + i;
-        temp[i].mortonCode = photonBeams[workGroupOffset + i].mortonCode;
+        temp[i].level = pairs[workGroupOffset + i].level;
     }
 
     // Radix sorting loop - 4x 1-bit Radix, as specified by "Designing Efficient Sorting Algorithms for Manycore GPUs"
@@ -82,13 +80,13 @@ void main()
     uint writeOffset = 0;
     uint readOffset = 0;
     uint iteration = 0;
-    uint mask = 1 << baseShift;
+    uint mask = 15 << baseShift;
     while(iteration < 4)
     {
         // Count 1-bit split histogram
         for(uint i = startIdx; i < endIdx; i++)
         {
-            atomicAdd(elementsCount[temp[readOffset + i].mortonCode & mask], 1);
+            atomicAdd(elementsCount[temp[readOffset + i].level & mask], 1);
         }
         barrier();
 
@@ -96,8 +94,8 @@ void main()
         for(uint i = startIdx; i < endIdx; i++)
         {
             writeOffset = writeToFirstBuffer ? 0 : ELEMENTS_PER_WORK_GROUP;
-            writeOffset += (temp[readOffset + i].mortonCode & mask) == 0 ? 0 : elementsCount[0];
-            writeOffset += atomicAdd(elementsWritten[temp[readOffset + i].mortonCode & mask], 1);
+            writeOffset += (temp[readOffset + i].level & mask) == 0 ? 0 : elementsCount[0];
+            writeOffset += atomicAdd(elementsWritten[temp[readOffset + i].level & mask], 1);
 
             temp[writeOffset] = temp[readOffset + i];
         }
@@ -124,7 +122,7 @@ void main()
     uint maskedIdx = 0;
     for(uint i = startIdx; i < endIdx; i++)
     {
-        maskedIdx = temp[readOffset + i].mortonCode & (15 << baseShift);
+        maskedIdx = temp[readOffset + i].level & mask;
         maskedIdx = maskedIdx >> baseShift;
         atomicAdd(localHistogram[maskedIdx], 1);
     }
@@ -139,6 +137,6 @@ void main()
     // Copy elements back to global memory
     for(uint i = startIdx; i < endIdx; i++)
     {
-        sortedPhotonBeams[workGroupOffset + i] = photonBeams[temp[readOffset + i].idx];
+        sortedPairs[workGroupOffset + i] = pairs[temp[readOffset + i].idx];
     }
 }

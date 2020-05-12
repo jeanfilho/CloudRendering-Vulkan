@@ -5,13 +5,11 @@ layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 // Structs
 //---------------------------------------------------------
 
-struct PhotonBeam
+struct Pair
 {
-    uint mortonCode;
-	vec3 startPos;
-    float radius;
-    vec3 endPos;
-	vec4 power;
+    uint beamIdx;
+    uint level;
+    uint __padding[2];
 };
 
 //---------------------------------------------------------
@@ -23,16 +21,16 @@ const uint ELEMENTS_PER_WORK_GROUP = ELEMENTS_PER_THREAD * gl_WorkGroupSize.x;
 //---------------------------------------------------------
 // Descriptor Set
 //---------------------------------------------------------
-layout (binding = 0, std430) restrict buffer SortedPhotonBeams
+layout (binding = 0, std430) restrict buffer SortedPairs
 {
-    uvec4 sortedbeamCount;
-    PhotonBeam sortedPhotonBeams[];
+    uvec4 sortedPairCount;
+    Pair sortedPairs[];
 };
 
-layout (binding = 1, std430) restrict buffer GlobalSortedPhotonBeams
+layout (binding = 1, std430) restrict buffer GlobalSortedPairs
 {
-    uvec4 globalSortedBeamCount;
-    PhotonBeam globalSortedPhotonBeams[];
+    uvec4 globalSortedPairCount;
+    Pair globalSortedPairs[];
 };
 
 layout (binding = 2, std430) restrict buffer Histogram16b
@@ -57,7 +55,7 @@ void main()
 {
     if(gl_GlobalInvocationID.x == 0)
     {
-        globalSortedBeamCount = sortedbeamCount;
+        globalSortedPairCount = sortedPairCount;
     }
 
     uint workGroupOffset = gl_WorkGroupID.x * ELEMENTS_PER_WORK_GROUP;
@@ -70,7 +68,7 @@ void main()
     uint bucketStartIdx = 0;
     for(uint i = 0; i < ELEMENTS_PER_THREAD; i++)
     {
-        maskedIdx = sortedPhotonBeams[workGroupOffset + startIdx + i].mortonCode & mask;
+        maskedIdx = sortedPairs[workGroupOffset + startIdx + i].level & mask;
         maskedIdx = maskedIdx >> baseShift;
         offsets[i] = scannedHistogram[maskedIdx * gl_WorkGroupSize.x + gl_WorkGroupID.x];
 
@@ -85,6 +83,6 @@ void main()
     // Copy locally sorted beams to their global positions
     for(uint i = 0; i < ELEMENTS_PER_THREAD; i++)
     {
-        globalSortedPhotonBeams[offsets[i]] = sortedPhotonBeams[workGroupOffset + i];
+        globalSortedPairs[offsets[i]] = sortedPairs[workGroupOffset + i];
     }
 }
