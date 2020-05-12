@@ -1,0 +1,144 @@
+#version 450
+
+layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+//---------------------------------------------------------
+// Structs
+//---------------------------------------------------------
+
+struct PhotonBeam
+{
+    uint mortonCode;
+	vec3 startPos;
+    float radius;
+    vec3 endPos;
+	vec4 power;
+};
+
+struct SortElement
+{
+    uint idx;
+    uint mortonCode;
+};
+
+//---------------------------------------------------------
+// Consts
+//---------------------------------------------------------
+const uint ELEMENTS_PER_THREAD = 4;
+const uint ELEMENTS_PER_WORK_GROUP = ELEMENTS_PER_THREAD * gl_WorkGroupSize.x;
+
+//---------------------------------------------------------
+// Descriptor Set
+//---------------------------------------------------------
+layout (binding = 0, std430) restrict buffer PhotonBeams
+{
+    uvec4 beamCount;
+    PhotonBeam photonBeams[];
+};
+
+layout (binding = 1, std430) restrict buffer SortedPhotonBeams
+{
+    uvec4 sortedBeamCount;
+    PhotonBeam sortedPhotonBeams[];
+};
+
+layout (binding = 2, std430) restrict buffer Histogram16b
+{
+    uint histogram[];
+};
+
+layout(push_constant) uniform PushConstants
+{
+    uint baseShift;
+};
+
+shared SortElement temp[ELEMENTS_PER_WORK_GROUP * 2];
+shared uint elementsCount[2];
+shared uint elementsWritten[2];
+shared uint localHistogram[16];
+
+//---------------------------------------------------------
+// Main
+//---------------------------------------------------------
+void main() 
+{
+    if(gl_GlobalInvocationID.x == 0)
+    {
+        sortedBeamCount = beamCount;
+    }
+
+    uint workGroupOffset = gl_WorkGroupID.x * ELEMENTS_PER_WORK_GROUP;
+    uint startIdx = gl_LocalInvocationID.x * ELEMENTS_PER_THREAD;
+    uint endIdx = startIdx + ELEMENTS_PER_THREAD;
+
+    // Copy elements to shared memory
+    for(uint i = startIdx; i < endIdx; i++)
+    {
+        temp[i].idx = workGroupOffset + i;
+        temp[i].mortonCode = photonBeams[workGroupOffset + i].mortonCode;
+    }
+
+    // Radix sorting loop - 4x 1-bit Radix, as specified by "Designing Efficient Sorting Algorithms for Manycore GPUs"
+    bool writeToFirstBuffer = false;
+    uint writeOffset = 0;
+    uint readOffset = 0;
+    uint iteration = 0;
+    uint mask = 1 << baseShift;
+    while(iteration < 4)
+    {
+        // Count 1-bit split histogram
+        for(uint i = startIdx; i < endIdx; i++)
+        {
+            atomicAdd(elementsCount[temp[readOffset + i].mortonCode & mask], 1);
+        }
+        barrier();
+
+        // Move elements to their respective position
+        for(uint i = startIdx; i < endIdx; i++)
+        {
+            writeOffset = writeToFirstBuffer ? 0 : ELEMENTS_PER_WORK_GROUP;
+            writeOffset += (temp[readOffset + i].mortonCode & mask) == 0 ? 0 : elementsCount[0];
+            writeOffset += atomicAdd(elementsWritten[temp[readOffset + i].mortonCode & mask], 1);
+
+            temp[writeOffset] = temp[readOffset + i];
+        }
+        barrier();
+
+        // Clear auxiliary counting arrays;
+        if(gl_LocalInvocationID.x < 2)
+        {
+            elementsCount[gl_LocalInvocationID.x] = 0;
+            elementsWritten[gl_LocalInvocationID.x] = 0;
+        }
+
+        // Wait until all threads have cleared their ranges in the elements counting
+        barrier();
+
+        // Update parameters
+        iteration++;
+        writeToFirstBuffer = !writeToFirstBuffer;
+        mask = mask << 1;
+        readOffset = writeToFirstBuffer ? ELEMENTS_PER_WORK_GROUP : 0;
+    }
+
+    // Count 4-bit local histogram
+    uint maskedIdx = 0;
+    for(uint i = startIdx; i < endIdx; i++)
+    {
+        maskedIdx = temp[readOffset + i].mortonCode & (15 << baseShift);
+        maskedIdx = maskedIdx >> baseShift;
+        atomicAdd(localHistogram[maskedIdx], 1);
+    }
+    barrier();
+
+    // Copy local histogram to global table in global memory - column major as instructed by paper
+    if(gl_LocalInvocationID.x < 16)
+    {
+        histogram[gl_LocalInvocationID.x * gl_NumWorkGroups.x] =  localHistogram[gl_LocalInvocationID.x];
+    }
+    
+    // Copy elements back to global memory
+    for(uint i = startIdx; i < endIdx; i++)
+    {
+        sortedPhotonBeams[workGroupOffset + i] = photonBeams[temp[readOffset + i].idx];
+    }
+}

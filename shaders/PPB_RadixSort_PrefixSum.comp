@@ -1,0 +1,36 @@
+#version 450
+
+layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+//---------------------------------------------------------
+// Descriptor Set
+//---------------------------------------------------------
+
+layout (binding = 0, std430) restrict buffer Histogram16b
+{
+    uint histogram[];
+};
+layout (binding = 1, std430) restrict buffer ScannedHistogram16b
+{
+    uint scannedHistogram[];
+};
+
+layout(push_constant) uniform PushConstants
+{
+    uint workGroupCount;
+};
+
+//---------------------------------------------------------
+// Main
+//---------------------------------------------------------
+void main() 
+{
+    // Perform prefix sum to calculate offsets
+    if(gl_GlobalInvocationID.x < 16 * workGroupCount)
+    {
+        for(int i = 0; i < gl_GlobalInvocationID.x; i++)
+        {
+            scannedHistogram[gl_LocalInvocationID.x] += histogram[i];
+        } 
+    }
+}

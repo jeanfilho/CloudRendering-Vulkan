@@ -1,6 +1,6 @@
 #version 450
 
-layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 //---------------------------------------------------------
 // Structs
 //---------------------------------------------------------
@@ -14,11 +14,11 @@ struct Ray
 
 struct PhotonBeam
 {
-    uint mortonCode;
-	vec3 startPos;
-    float radius;
-    vec3 endPos;
+	vec4 startPos;
+    vec4 endPos;
 	vec4 power;
+    float radius;
+    float __padding[3];
 };
 
 //---------------------------------------------------------
@@ -31,20 +31,20 @@ const float FLT_MAX = 3.402823466e+38;
 const float FLT_MIN = 1.175494351e-38;
 const vec4 BG_COLORS[5] = 
     {
-        vec4(0.00f, 0.0f, 0.02f, 1.0f),  // GROUND DARKER BLUE
-        vec4(0.01f, 0.05f, 0.2f, 1.0f),  // HORIZON GROUND DARK BLUE
-        vec4(0.7f, 0.9f, 1.0f, 1.0f),    // HORIZON SKY WHITE
-        vec4(0.1f, 0.3f, 1.0f, 1.0f),    // SKY LIGHT BLUE
-        vec4(0.01f, 0.1f, 0.7f, 1.0f)    // SKY BLUE
+        vec4(0.00f, 0.0f, 0.02f, 1.0f), // GROUND DARKER BLUE
+        vec4(0.01f, 0.05f, 0.2f, 1.0f), // HORIZON GROUND DARK BLUE
+        vec4(0.7f, 0.9f, 1.0f, 1.0f), // HORIZON SKY WHITE
+        vec4(0.1f, 0.3f, 1.0f, 1.0f),  // SKY LIGHT BLUE
+        vec4(0.01f, 0.1f, 0.7f, 1.0f)  // SKY BLUE
     };
 const float BG_DISTS[5] = 
-    {
-        -1.0f,
-        -0.04f,
-        0.0f,
-        0.5f,
-        1.0f
-    };
+{
+    -1.0f,
+    -0.04f,
+    0.0f,
+    0.5f,
+    1.0f
+};
 
 const int BEAM_SAMPLES = 10;
 
@@ -288,12 +288,6 @@ void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
 //---------------------------------------------------------
 // Photon Map Functions
 //---------------------------------------------------------
-uint getMortonCode(in const vec3 beamCenter)
-{
-    //TODO
-    return 0;
-}
-
 vec4 currentColor = SUNLIGHT_COLOR * parameters.lightIntensity;
 void depositPhotonBeam(in const Ray ray)
 {
@@ -302,24 +296,15 @@ void depositPhotonBeam(in const Ray ray)
     intersectCloud(ray, tmax, tmin);
     vec3 exitPos = ray.pos + ray.dir * tmax;
 
-    float beamLength = distance(ray.pos, exitPos);
-    uint segments = uint( beamLength / ray.radius);
-    float segmentSize = beamLength / segments;
-
-    // Split beams in cilinders with lenght == radius. More or less unit ratio area of volume faces
     PhotonBeam beam;
-    uint offset = atomicAdd(beamCount.x, segments);
-    for(uint i = 0; i < segments; i++)
-    {
-        beam.startPos = ray.pos + ray.dir * (i * segmentSize);
-        beam.endPos = beam.startPos + ray.dir * segmentSize;
-        beam.power = SUNLIGHT_COLOR * parameters.lightIntensity;
-        beam.radius = ray.radius;
-        beam.mortonCode = getMortonCode((beam.startPos + beam.endPos) / 2.0f);
+    beam.startPos = vec4(ray.pos, 0);
+    beam.endPos = vec4(exitPos, 0);
+    beam.power = SUNLIGHT_COLOR * parameters.lightIntensity;
+    beam.radius = ray.radius;
     
-        // Add beam to list
-        photonBeams[offset + i] = beam;
-    }
+    // Add beam to list
+    uint offset = atomicAdd(beamCount.x, 1);
+    photonBeams[offset] = beam;
 }
 
 // Provided by Ludwig Leonart - https://github.com/lleonart1984
@@ -420,6 +405,20 @@ bool interactWithMedium(inout Ray ray)
             break;
         }
     } while (true);
+
+    // // Calculate attenuation along distance
+    // vec3 step = (currentPoint - ray.pos) / BEAM_SAMPLES;
+    // float stepSize = length(step);
+    // float scaling = cloudProperties.densityScaling / cloudProperties.baseScaling;
+
+    // float attenuation = 1;
+    // int i = 0;
+    // while(i < BEAM_SAMPLES)
+    // {
+    //     ray.pos += step;
+    //     attenuation *= exp( -stepSize * sampleCloud(ray.pos) * scaling);
+    // }
+    // ray.radius *= attenuation;
 
     // Advance ray to next position
     ray.pos = currentPoint;
