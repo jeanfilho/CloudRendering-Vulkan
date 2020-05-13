@@ -23,6 +23,7 @@ struct SortElement
 //---------------------------------------------------------
 // Consts
 //---------------------------------------------------------
+const uint MAX_UINT = 4294967295;
 const uint ELEMENTS_PER_THREAD = 4;
 const uint ELEMENTS_PER_WORK_GROUP = ELEMENTS_PER_THREAD * gl_WorkGroupSize.x;
 
@@ -69,6 +70,16 @@ void main()
     uint workGroupOffset = gl_WorkGroupID.x * ELEMENTS_PER_WORK_GROUP;
     uint startIdx = gl_LocalInvocationID.x * ELEMENTS_PER_THREAD;
     uint endIdx = startIdx + ELEMENTS_PER_THREAD;
+
+    // Check if in bounds
+    if(startIdx >= beamCount.x)
+    {
+        startIdx = MAX_UINT;
+    }
+    if(endIdx > beamCount.x)
+    {
+        endIdx = beamCount.x;
+    }
 
     // Copy elements to shared memory
     for(uint i = startIdx; i < endIdx; i++)

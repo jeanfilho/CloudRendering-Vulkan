@@ -21,21 +21,22 @@ struct SortElement
 //---------------------------------------------------------
 // Consts
 //---------------------------------------------------------
+const uint MAX_UINT = 4294967295;
 const uint ELEMENTS_PER_THREAD = 4;
 const uint ELEMENTS_PER_WORK_GROUP = ELEMENTS_PER_THREAD * gl_WorkGroupSize.x;
 
 //---------------------------------------------------------
 // Descriptor Set
 //---------------------------------------------------------
-layout (binding = 0, std430) restrict buffer PhotonBeams
+layout (binding = 0, std430) restrict buffer Pairs
 {
-    uvec4 beamCount;
+    uvec4 pairCount;
     Pair pairs[];
 };
 
-layout (binding = 1, std430) restrict buffer SortedPhotonBeams
+layout (binding = 1, std430) restrict buffer SortedPairs
 {
-    uvec4 sortedBeamCount;
+    uvec4 sortedPairCount;
     Pair sortedPairs[];
 };
 
@@ -61,12 +62,22 @@ void main()
 {
     if(gl_GlobalInvocationID.x == 0)
     {
-        sortedBeamCount = beamCount;
+        sortedPairCount = pairCount;
     }
 
     uint workGroupOffset = gl_WorkGroupID.x * ELEMENTS_PER_WORK_GROUP;
     uint startIdx = gl_LocalInvocationID.x * ELEMENTS_PER_THREAD;
     uint endIdx = startIdx + ELEMENTS_PER_THREAD;
+    
+    // Check if in bounds
+    if(startIdx >= pairCount.x)
+    {
+        startIdx = MAX_UINT;
+    }
+    if(endIdx > pairCount.x)
+    {
+        endIdx = pairCount.x;
+    }
 
     // Copy elements to shared memory
     for(uint i = startIdx; i < endIdx; i++)

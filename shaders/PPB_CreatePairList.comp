@@ -1,0 +1,101 @@
+#version 450
+
+layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+//---------------------------------------------------------
+// Structs
+//---------------------------------------------------------
+
+struct PhotonBeam
+{
+    uint mortonCode;
+	vec3 startPos;
+    float radius;
+    vec3 endPos;
+	vec4 power;
+};
+
+struct Pair
+{
+    uint beamIdx;
+    uint level;
+    uint __padding[2];
+};
+
+//---------------------------------------------------------
+// Consts
+//---------------------------------------------------------
+const uint MAX_TREE_DEPTH = 3 * 8;
+const uint MAX_UINT = 4294967295;
+const uint ELEMENTS_PER_THREAD = 4;
+const uint ELEMENTS_PER_WORK_GROUP = ELEMENTS_PER_THREAD * gl_WorkGroupSize.x;
+
+//---------------------------------------------------------
+// Descriptor Set
+//---------------------------------------------------------
+layout (binding = 0, std430) restrict buffer SortedPhotonBeams
+{
+    uvec4 beamCount;
+    PhotonBeam sortedPhotonBeams[];
+};
+
+layout (binding = 1, std430) restrict buffer Pairs
+{
+    uvec4 pairCount;
+    Pair pairs[];
+};
+
+//---------------------------------------------------------
+// Helper Functions
+//---------------------------------------------------------
+uint getLevelSplit(in const uint left, in const uint right)
+{
+    const uint mask = 134217728;
+    uint shiftedMask = 0;
+    for(uint i = 0; i < MAX_TREE_DEPTH; i++)
+    {
+        shiftedMask = mask >> i;
+        if((shiftedMask & left) != (shiftedMask & right))
+        {
+            return i;
+        }
+    }
+
+    return MAX_TREE_DEPTH - 1;
+}
+
+//---------------------------------------------------------
+// Main
+//---------------------------------------------------------
+void main() 
+{
+    uint workGroupOffset = gl_WorkGroupID.x * ELEMENTS_PER_WORK_GROUP;
+    uint startIdx = gl_LocalInvocationID.x * ELEMENTS_PER_THREAD;
+    uint endIdx = startIdx + ELEMENTS_PER_THREAD;
+    
+    // Check if in bounds
+    if(startIdx >= beamCount.x)
+    {
+        startIdx = MAX_UINT;
+    }
+    if(endIdx > beamCount.x - 1)
+    {
+        endIdx = beamCount.x - 1;
+    }
+
+    // Compare neighboring elements
+    uint levelSplit = 0;
+    uint baseOffset = 0;
+    uint pairOffset = 0;
+    for(uint i = startIdx; i < endIdx; i++)
+    {
+        levelSplit = getLevelSplit(sortedPhotonBeams[i].mortonCode, sortedPhotonBeams[i + 1].mortonCode);
+        baseOffset = atomicAdd(pairCount.x, (MAX_TREE_DEPTH - levelSplit));
+        for(uint j = levelSplit; j < MAX_TREE_DEPTH; j++)
+        {
+            pairs[baseOffset + pairOffset].beamIdx = i;
+            pairs[baseOffset + pairOffset].level = j;
+            
+            pairOffset++;
+        }        
+    }
+}

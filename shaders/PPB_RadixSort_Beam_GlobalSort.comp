@@ -17,6 +17,7 @@ struct PhotonBeam
 //---------------------------------------------------------
 // Consts
 //---------------------------------------------------------
+const uint MAX_UINT = 4294967295;
 const uint ELEMENTS_PER_THREAD = 4;
 const uint ELEMENTS_PER_WORK_GROUP = ELEMENTS_PER_THREAD * gl_WorkGroupSize.x;
 
@@ -25,7 +26,7 @@ const uint ELEMENTS_PER_WORK_GROUP = ELEMENTS_PER_THREAD * gl_WorkGroupSize.x;
 //---------------------------------------------------------
 layout (binding = 0, std430) restrict buffer SortedPhotonBeams
 {
-    uvec4 sortedbeamCount;
+    uvec4 sortedBeamCount;
     PhotonBeam sortedPhotonBeams[];
 };
 
@@ -57,18 +58,29 @@ void main()
 {
     if(gl_GlobalInvocationID.x == 0)
     {
-        globalSortedBeamCount = sortedbeamCount;
+        globalSortedBeamCount = sortedBeamCount;
     }
 
     uint workGroupOffset = gl_WorkGroupID.x * ELEMENTS_PER_WORK_GROUP;
     uint startIdx = gl_LocalInvocationID.x * ELEMENTS_PER_THREAD;
+    uint endIdx = startIdx + ELEMENTS_PER_THREAD;
+
+    // Check if in bounds
+    if(startIdx >= sortedBeamCount.x || startIdx + ELEMENTS_PER_THREAD >= sortedBeamCount.x)
+    {
+        return;
+    }
+    if(endIdx > sortedBeamCount.x)
+    {
+        endIdx = sortedBeamCount.x;
+    }
 
     // Pre-calculate offsets
     uint offsets[ELEMENTS_PER_THREAD];
     uint mask = 15 << baseShift;
     uint maskedIdx = 0;
     uint bucketStartIdx = 0;
-    for(uint i = 0; i < ELEMENTS_PER_THREAD; i++)
+    for(uint i = 0; i < endIdx - startIdx; i++)
     {
         maskedIdx = sortedPhotonBeams[workGroupOffset + startIdx + i].mortonCode & mask;
         maskedIdx = maskedIdx >> baseShift;
@@ -83,7 +95,7 @@ void main()
     }
 
     // Copy locally sorted beams to their global positions
-    for(uint i = 0; i < ELEMENTS_PER_THREAD; i++)
+    for(uint i = 0; i < endIdx - startIdx; i++)
     {
         globalSortedPhotonBeams[offsets[i]] = sortedPhotonBeams[workGroupOffset + i];
     }
