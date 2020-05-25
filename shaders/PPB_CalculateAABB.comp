@@ -1,0 +1,113 @@
+#version 450
+
+layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+//---------------------------------------------------------
+// Structs
+//---------------------------------------------------------
+
+struct PhotonBeam
+{
+    uint mortonCode;
+	vec3 startPos;
+    float radius;
+    vec3 endPos;
+	vec4 power;
+};
+
+struct TreeNode
+{
+    uint parent;
+    uint left;
+    uint right;
+    bool isLeaf;
+    vec4 bounds[2];
+    uint processed;
+    uint _padding_node[3];
+};
+
+//---------------------------------------------------------
+// Consts
+//---------------------------------------------------------
+const uint MAX_TREE_DEPTH = 3 * 8;
+const uint MAX_UINT = 4294967295;
+
+//---------------------------------------------------------
+// Descriptor Set
+//---------------------------------------------------------
+layout (binding = 0, std430) restrict buffer SortedPhotonBeams
+{
+    uint beamCount;
+    uint _padding_beams[3];
+    PhotonBeam sortedPhotonBeams[];
+};
+
+layout (binding = 1, std430) restrict buffer Tree
+{
+    uint innerCount; // Number of internal tree nodes
+    uint _padding_tree[3];
+    TreeNode nodes[]; // Actually nodeCount + beamCount size
+};
+
+//---------------------------------------------------------
+// Helper Functions
+//---------------------------------------------------------
+// Calculate the AABB for a cylinder
+// https://iquilezles.org/www/articles/diskbbox/diskbbox.htm and https://www.shadertoy.com/view/MtcXRf
+vec4[2] calculateBeamBounds(const uint idx)
+{
+    vec4[2] bounds;
+
+    float ra = sortedPhotonBeams[idx].radius;
+    vec3 pa = sortedPhotonBeams[idx].startPos;
+    vec3 pb = sortedPhotonBeams[idx].endPos;
+
+    // Project cylinder axis into 
+    vec3 a = pb - pa;
+    vec3 e = ra * sqrt( 1.0 - (a * a/ dot (a , a)) );
+    
+    bounds[0] = vec4(min( pa - e, pb - e), 0);
+    bounds[1] = vec4(max( pa + e, pb + e), 0);
+
+    return bounds;
+}
+
+vec4[2] calculateNodeBounds(const uint idx)
+{
+    vec4[2] bounds;
+
+    uint leftIdx = nodes[idx].left;
+    uint rightIdx = nodes[idx].right;
+
+    bounds[0] = min(nodes[leftIdx].bounds[0], nodes[rightIdx].bounds[0]);
+    bounds[1] = max(nodes[leftIdx].bounds[0], nodes[rightIdx].bounds[0]);
+
+    return bounds;
+}
+
+
+//---------------------------------------------------------
+// Main
+//---------------------------------------------------------
+// Based on https://devblogs.nvidia.com/thinking-parallel-part-iii-tree-construction-gpu/
+void main() 
+{
+    uint idx = gl_GlobalInvocationID.x;
+
+    // Only calculate for the amount of beams
+    if(idx.x >= beamCount)
+    {
+        return;
+    }
+
+    // Calculate AABB for the leaves
+    nodes[innerCount + idx].bounds = calculateBeamBounds(idx);
+
+    // Walk up the tree and calculate bounds based on child results
+    // Terminate if the other child has not yet been processed
+    uint currentIdx = nodes[innerCount + idx].parent;
+    while(atomicAdd(nodes[currentIdx].processed, 1) > 0)
+    {
+        nodes[currentIdx].bounds = calculateNodeBounds(currentIdx);
+        currentIdx = nodes[currentIdx].parent;
+    }
+}

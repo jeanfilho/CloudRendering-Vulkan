@@ -1,0 +1,161 @@
+#version 450
+
+layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+//---------------------------------------------------------
+// Structs
+//---------------------------------------------------------
+
+struct PhotonBeam
+{
+    uint mortonCode;
+	vec3 startPos;
+    float radius;
+    vec3 endPos;
+	vec4 power;
+};
+
+struct TreeNode
+{
+    uint parent;
+    uint left;
+    uint right;
+    bool isLeaf;
+    vec4 bounds[2];
+    uint processed;
+    uint _padding_node[3];
+};
+
+//---------------------------------------------------------
+// Consts
+//---------------------------------------------------------
+const uint MAX_TREE_DEPTH = 3 * 8;
+const uint MAX_UINT = 4294967295;
+
+//---------------------------------------------------------
+// Descriptor Set
+//---------------------------------------------------------
+layout (binding = 0, std430) restrict buffer SortedPhotonBeams
+{
+    uint beamCount;
+    uint _padding_beams[3];
+    PhotonBeam sortedPhotonBeams[];
+};
+
+layout (binding = 1, std430) restrict buffer Tree
+{
+    uint innerCount; // Number of internal tree nodes
+    uint _padding_tree[3];
+    TreeNode nodes[]; // Actually nodeCount + beamCount size
+};
+
+//---------------------------------------------------------
+// Helper Functions
+//---------------------------------------------------------
+uint countLeadingZeroes(const uint value)
+{
+    return value > 0 ? (31 - uint(floor(log2(value)))) : 32;
+}
+
+// From https://devblogs.nvidia.com/thinking-parallel-part-iii-tree-construction-gpu/
+uint findSplit(const uint first, const uint last)
+{
+    uint firstCode = sortedPhotonBeams[first].mortonCode;
+    uint lastCode = sortedPhotonBeams[last].mortonCode;
+
+    // Identical Morton codes => split the range in the middle
+    if (firstCode == lastCode)
+        return (first + last) >> 1;
+
+    // Calculate the number of highest bits that are the same
+    // for all objects, using the count-leading-zeros intrinsic.
+    uint prefix = countLeadingZeroes(firstCode ^ lastCode);
+
+    // Use binary search to find where the next bit differs.
+    // Specifically, we are looking for the highest object that
+    // shares more than commonPrefix bits with the first one.
+    uint split = first; // initial guess
+    uint step = last - first;
+
+    do
+    {
+        step = (step + 1) >> 1; // exponential decrease
+        uint newSplit = split + step; // proposed new position
+
+        if (newSplit < last)
+        {
+            uint splitCode = sortedPhotonBeams[newSplit].mortonCode;
+            uint splitPrefix = countLeadingZeroes(firstCode ^ splitCode);
+
+            if (splitPrefix > prefix)
+            {
+                split = newSplit; // accept proposal
+            }
+        }
+    }
+    while (step > 1);
+
+    return split;
+}
+
+int getCommonPrefix(const uint first, const uint second)
+{
+    if(second < 0 || second > innerCount)
+    {
+        return -1;
+    }
+
+    return int(countLeadingZeroes(sortedPhotonBeams[first].mortonCode ^ sortedPhotonBeams[second].mortonCode));
+}
+
+//---------------------------------------------------------
+// Main
+//---------------------------------------------------------
+// Based on https://devblogs.nvidia.com/thinking-parallel-part-iii-tree-construction-gpu/
+void main() 
+{
+    uint idx = gl_GlobalInvocationID.x;
+
+    // Only calculate for the amount of inner nodes
+    if(idx.x >= innerCount)
+    {
+        return;
+    }
+
+    // Mark leaves
+    nodes[innerCount + idx].isLeaf = true;
+    nodes[innerCount + idx + 1].isLeaf = true;
+    
+    // Determine Direction of the range (+1 or -1) - the one with the largest common prefix
+    int direction = sign(getCommonPrefix(idx, idx + 1) - getCommonPrefix(idx, idx - 1));
+
+    // Compute upper bound for the length of the range
+    uint minPrefix = getCommonPrefix(idx, idx - direction);
+    uint upperBound = 2;
+    while( getCommonPrefix(idx, idx + upperBound * direction) > minPrefix)
+    {
+        upperBound *= 2;
+    }
+
+    // Find the other end using binary search
+    uint range = 0;
+    for(uint t = upperBound/2; t >= 1; t /= 2)
+    {
+        if(getCommonPrefix(idx, idx + (range + t) * direction) > minPrefix)
+        {
+            range += t;
+        }
+    }
+
+    // Find the split position using binary search
+    uint endIdx = idx + range * direction;
+    uint split = findSplit(idx, endIdx) + min(direction, 0);
+   
+    // Record parent-child relationships
+    uint leftIdx = min(idx, endIdx) == split ? innerCount + split : split;
+    uint rightIdx = max(idx, endIdx) == split + 1 ? innerCount + split + 1 : split + 1;
+    
+    nodes[idx].left = leftIdx;
+    nodes[idx].right = rightIdx;
+    nodes[leftIdx].parent = idx;
+    nodes[rightIdx].parent = idx;
+}

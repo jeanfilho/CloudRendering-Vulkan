@@ -1,25 +1,7 @@
 #version 450
 
 layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
-//---------------------------------------------------------
-// Structs
-//---------------------------------------------------------
 
-struct Ray
-{
-    vec3 pos;
-    vec3 dir;
-    float radius;
-};
-
-struct PhotonBeam
-{
-    uint mortonCode;
-	vec3 startPos;
-    float radius;
-    vec3 endPos;
-	vec4 power;
-};
 
 //---------------------------------------------------------
 // Constants
@@ -46,17 +28,50 @@ const float BG_DISTS[5] =
         1.0f
     };
 
-const int BEAM_SAMPLES = 10;
+const uint BEAM_TRANSMITTANCE_SAMPLES = 16;
+
+//---------------------------------------------------------
+// Structs
+//---------------------------------------------------------
+struct Ray
+{
+    vec3 pos;
+    vec3 dir;
+    float radius;
+};
+
+struct PhotonBeam
+{
+    uint mortonCode;
+	vec3 startPos;
+    float radius;
+    vec3 endPos;
+    uint dataIdx;
+    uint _padding_beam[3];
+};
+
+struct PhotonBeamData
+{
+    vec4 power;
+    float trDistances[BEAM_TRANSMITTANCE_SAMPLES];
+};
 
 //---------------------------------------------------------
 // Descriptor Set
 //---------------------------------------------------------
-layout (binding = 0, std430) restrict  buffer PhotonMap
+layout (binding = 0, std430) restrict  buffer PhotonBeams
 {
     uvec4 beamCount;
     PhotonBeam photonBeams[];
 };
-layout (binding = 1) uniform PhotonMapProperties
+
+layout (binding = 1, std430) restrict  buffer PhotonBeamsData
+{
+    uvec4 dataCount;
+    PhotonBeamData photonBeamsData[];
+};
+
+layout (binding = 2) uniform PhotonBeamsProperties
 {
 	vec4 lightDirection;
     vec4 bounds[2];
@@ -66,10 +81,10 @@ layout (binding = 1) uniform PhotonMapProperties
 	float stepSize;
 	float absorption;
     
-} photonMapProperties;
+} photonBeamsProperties;
 
-layout (binding = 2) uniform sampler3D cloudSampler;
-layout (binding = 3) uniform CloudProperties
+layout (binding = 3) uniform sampler3D cloudSampler;
+layout (binding = 4) uniform CloudProperties
 {
     vec4 bounds[2];
     uvec4 voxelCount;
@@ -79,7 +94,7 @@ layout (binding = 3) uniform CloudProperties
 
 } cloudProperties;
 
-layout (binding = 4) uniform Parameters
+layout (binding = 5) uniform Parameters
 {
     uint maxRayBounces;
     float lightIntensity;
@@ -288,10 +303,25 @@ void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
 //---------------------------------------------------------
 // Photon Map Functions
 //---------------------------------------------------------
-uint getMortonCode(in const vec3 beamCenter)
+
+// https://devblogs.nvidia.com/thinking-parallel-part-iii-tree-construction-gpu/
+//Expand 8 bits into 24 bits by inserting two zeroes between each bit
+uint expandBits(in uint v)
 {
-    //TODO
-    return 0;
+    v = (v * 0x00000101u) & 0x0F00F00Fu;
+    v = (v * 0x00000011u) & 0xC30C30C3u;
+    v = (v * 0x00000005u) & 0x49249249u;
+    return v;
+}
+
+// Retrieve 24 bits morton code
+uint getMortonCode(in const vec3 pos)
+{
+    vec3 relPos = pos - cloudProperties.bounds[0].xyz;
+    uint x = uint(min(max(relPos.x / 256.f, 0.f), 255.f));
+    uint y = uint(min(max(relPos.y / 256.f, 0.f), 255.f));
+    uint z = uint(min(max(relPos.z / 256.f, 0.f), 255.f));
+    return (expandBits(x) << 2) + (expandBits(y) << 1) + expandBits(z);
 }
 
 vec4 currentColor = SUNLIGHT_COLOR * parameters.lightIntensity;
@@ -306,6 +336,43 @@ void depositPhotonBeam(in const Ray ray)
     uint segments = uint( beamLength / ray.radius);
     float segmentSize = beamLength / segments;
 
+    // Add shared beam data to buffer, including progressive deep shadow map distances
+    uint dataIdx = atomicAdd(dataCount.x, 1);
+    photonBeamsData[dataIdx].power = currentColor;
+    float denom = cloudProperties.maxExtinction * cloudProperties.densityScaling / cloudProperties.baseScaling;
+    for(uint i = 0; i < BEAM_TRANSMITTANCE_SAMPLES; i++)
+    {
+        // Loop until not null scatter or cloud left
+        float t = 0;
+        float zeta, xi;
+        vec3 currentPoint;
+        float extinction;
+        do
+        {
+            zeta = generateRandomNumber();
+            t += -log(zeta) / denom;
+            if (t > beamLength)
+            {
+                break;
+            }
+
+            // Update the ray position
+            currentPoint = ray.pos + t * ray.dir;
+
+            // Get the normalized extinction
+            extinction = sampleCloud(currentPoint);
+            
+            xi = generateRandomNumber();
+            if (xi < extinction / cloudProperties.maxExtinction)
+            {
+                break;
+            }
+        } while (true);
+
+        // Store propagated distance
+        photonBeamsData[dataIdx].trDistances[i] = t;
+    }
+
     // Split beams in cilinders with lenght == radius. More or less unit ratio area of volume faces
     PhotonBeam beam;
     uint offset = atomicAdd(beamCount.x, segments);
@@ -313,9 +380,9 @@ void depositPhotonBeam(in const Ray ray)
     {
         beam.startPos = ray.pos + ray.dir * (i * segmentSize);
         beam.endPos = beam.startPos + ray.dir * segmentSize;
-        beam.power = SUNLIGHT_COLOR * parameters.lightIntensity;
         beam.radius = ray.radius;
         beam.mortonCode = getMortonCode((beam.startPos + beam.endPos) / 2.0f);
+        beam.dataIdx = dataIdx;
     
         // Add beam to list
         photonBeams[offset + i] = beam;
@@ -327,12 +394,12 @@ void generateSunRay(in const uint emittedPhotons, out Ray ray, out float pdf)
 {
     // Calculate ray position on projected area
     vec4 boundsDiff = cloudProperties.bounds[1] - cloudProperties.bounds[0];
-    vec3 areas = boundsDiff.zxy * boundsDiff.yzx * abs(photonMapProperties.lightDirection.xyz);
+    vec3 areas = boundsDiff.zxy * boundsDiff.yzx * abs(photonBeamsProperties.lightDirection.xyz);
     float totalArea = dot(areas, vec3(1));
     float selectedSide = generateRandomNumber() * totalArea;
-    vec3 c1 =  vec3(photonMapProperties.lightDirection.x < 0 ? cloudProperties.bounds[0].x : cloudProperties.bounds[1].x,
-                    photonMapProperties.lightDirection.y < 0 ? cloudProperties.bounds[0].y : cloudProperties.bounds[1].y,
-                    photonMapProperties.lightDirection.z < 0 ? cloudProperties.bounds[0].z : cloudProperties.bounds[1].z);
+    vec3 c1 =  vec3(photonBeamsProperties.lightDirection.x < 0 ? cloudProperties.bounds[0].x : cloudProperties.bounds[1].x,
+                    photonBeamsProperties.lightDirection.y < 0 ? cloudProperties.bounds[0].y : cloudProperties.bounds[1].y,
+                    photonBeamsProperties.lightDirection.z < 0 ? cloudProperties.bounds[0].z : cloudProperties.bounds[1].z);
     vec3 c2 = c1;
     if (selectedSide < areas.x) // choose yz plane
     {
@@ -354,7 +421,7 @@ void generateSunRay(in const uint emittedPhotons, out Ray ray, out float pdf)
     }
 
     pdf = 1.0f / totalArea;
-    ray.dir = photonMapProperties.lightDirection.xyz;
+    ray.dir = photonBeamsProperties.lightDirection.xyz;
     ray.radius = sqrt(1.0f / (pdf * emittedPhotons)); //sqrt of the solid angle divided by the number of photons
 }
 
@@ -425,7 +492,7 @@ bool interactWithMedium(inout Ray ray)
     ray.pos = currentPoint;
 
     xi = generateRandomNumber();
-    return xi > photonMapProperties.absorption; // True: scatter - False: absorption
+    return xi > photonBeamsProperties.absorption; // True: scatter - False: absorption
 }
 
 //---------------------------------------------------------

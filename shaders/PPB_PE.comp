@@ -1,25 +1,6 @@
 #version 450
 
 layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
-//---------------------------------------------------------
-// Structs
-//---------------------------------------------------------
-
-struct Ray
-{
-    vec3 pos;
-    vec3 dir;
-    float radius;
-};
-
-struct PhotonBeam
-{
-	vec4 startPos;
-    vec4 endPos;
-	vec4 power;
-    float radius;
-    float __padding[3];
-};
 
 //---------------------------------------------------------
 // Constants
@@ -29,6 +10,8 @@ const float PI = 3.14159265359;
 const float INV_4Pi = 1.0f/(4.0f * PI);
 const float FLT_MAX = 3.402823466e+38;
 const float FLT_MIN = 1.175494351e-38;
+const float BIWEIGHT = 15.0f / 16.0f;
+const uint UINT_MAX = 4294967295;
 const vec4 BG_COLORS[5] = 
     {
         vec4(0.00f, 0.0f, 0.02f, 1.0f), // GROUND DARKER BLUE
@@ -45,31 +28,88 @@ const float BG_DISTS[5] =
     0.5f,
     1.0f
 };
+const uint BEAM_TRANSMITTANCE_SAMPLES = 16;
 
-const int BEAM_SAMPLES = 10;
+//---------------------------------------------------------
+// Structs
+//---------------------------------------------------------
+
+struct Ray
+{
+    vec3 pos;
+    vec3 dir;
+    float radius;
+};
+
+struct PhotonBeam
+{
+    uint mortonCode;
+	vec3 startPos;
+    float radius;
+    vec3 endPos;
+    uint dataIdx;
+    uint _padding_beam[3];
+};
+
+struct PhotonBeamData
+{
+    vec4 power;
+    float trDistances[BEAM_TRANSMITTANCE_SAMPLES];
+};
+
+struct TreeNode
+{
+    uint parent;
+    uint left;
+    uint right;
+    bool isLeaf; // if leaf, left indicate the beam idx in the sorted beams
+    vec4 bounds[2];
+    uint processed;
+    uint _padding_node[3];
+};
 
 //---------------------------------------------------------
 // Descriptor Set
 //---------------------------------------------------------
-layout (binding = 0, std430) restrict  buffer PhotonMap
-{
-    uvec4 beamCount;
-    PhotonBeam photonBeams[];
-};
-layout (binding = 1) uniform PhotonMapProperties
-{
-	vec4 lightDirection;
-    vec4 bounds[2];
-    ivec3 voxelCount;
-    float voxelSize;
-    uint photonSize;
-	float stepSize;
-	float absorption;
-    
-} photonMapProperties;
+layout (binding = 0, rgba32f) uniform image2D resultImage;
 
-layout (binding = 2) uniform sampler3D cloudSampler;
-layout (binding = 3) uniform CloudProperties
+layout (binding = 1) uniform CameraProperties
+{
+	vec3 position;
+	int halfWidth;
+	vec3 forward;
+    int halfHeight;
+    vec3 right;
+    float nearPlane;
+    vec3 up;
+    float pixelSizeY;
+    float pixelSizeX;
+
+} cameraProperties;
+
+layout (binding = 2, std430) restrict buffer SortedPhotonBeams
+{
+    uint beamCount;
+    uint _padding_beams[3];
+    PhotonBeam sortedPhotonBeams[];
+};
+
+layout (binding = 3, std430) restrict  buffer PhotonBeamsData
+{
+    uvec4 dataCount;
+    PhotonBeamData photonBeamsData[];
+};
+
+layout (binding = 4, std430) restrict buffer Tree
+{
+    uint innerCount; // Number of internal tree nodes
+    uint _padding_tree[3];
+    TreeNode nodes[]; // Actually nodeCount + beamCount size
+};
+
+layout (binding = 5) uniform sampler3D cloudSampler;
+
+layout (binding = 6) uniform CloudProperties
 {
     vec4 bounds[2];
     uvec4 voxelCount;
@@ -79,7 +119,7 @@ layout (binding = 3) uniform CloudProperties
 
 } cloudProperties;
 
-layout (binding = 4) uniform Parameters
+layout (binding = 7) uniform Parameters
 {
     uint maxRayBounces;
     float lightIntensity;
@@ -90,6 +130,20 @@ layout (binding = 4) uniform Parameters
     bool isotropic;
 
 } parameters;
+
+layout (binding = 8) uniform sampler3D shadowVolumeSampler;
+
+layout (binding = 9) uniform ShadowVolumeProperties
+{
+    vec4 bounds[2];
+	vec4 lightDirection;
+    vec4 right;
+    vec4 up;
+    mat4 basisChange;
+    uint voxelAxisCount;
+    float voxelSize;
+
+} shadowVolumeProperties;
 
 layout (push_constant) uniform PushConstants
 {
@@ -119,6 +173,23 @@ float sampleCloud(in vec3 pos)
     return texture(cloudSampler, normalizedIdx).x;
 }
 
+float sampleShadowVolume(in vec3 pos)
+{
+    vec3 normalizedIdx =
+        (shadowVolumeProperties.basisChange * (vec4(pos, 1) - shadowVolumeProperties.bounds[0]) /
+        (shadowVolumeProperties.basisChange * (shadowVolumeProperties.bounds[1] - shadowVolumeProperties.bounds[0]))).xyz;
+    return texture(shadowVolumeSampler, normalizedIdx).x;
+}
+
+void getCameraRay(in ivec2 coord, out Ray ray)
+{
+    ray.dir = cameraProperties.forward * cameraProperties.nearPlane
+                    + cameraProperties.right  * cameraProperties.pixelSizeX * (coord.x - cameraProperties.halfWidth)
+                    - cameraProperties.up * cameraProperties.pixelSizeY * (coord.y - cameraProperties.halfHeight);
+    ray.pos = ray.dir + cameraProperties.position;
+    ray.dir = normalize(ray.dir);
+}
+
 float average(in vec4 data)
 {
     float accumulated = 0.0f;
@@ -132,38 +203,6 @@ float average(in vec4 data)
 int isNegativeSign(in float value)
 {
     return int(value < 0);
-}
-
-bool intersectCloud(in Ray ray, out float tmax, out float tmin)
-{
-    float tymin = 0, tymax = 0, tzmin = 0, tzmax = 0;
-    vec3 invdir = 1 / ray.dir;
-    int sign[3] = {isNegativeSign(invdir.x), isNegativeSign(invdir.y), isNegativeSign(invdir.z)};
- 
-    tmin = (cloudProperties.bounds[sign[0]].x - ray.pos.x) * invdir.x; 
-    tmax = (cloudProperties.bounds[1-sign[0]].x - ray.pos.x) * invdir.x; 
-
-    tymin = (cloudProperties.bounds[sign[1]].y - ray.pos.y) * invdir.y; 
-    tymax = (cloudProperties.bounds[1-sign[1]].y - ray.pos.y) * invdir.y; 
- 
-    if ((tmin > tymax) || (tymin > tmax)) 
-        return false; 
-    if (tymin > tmin) 
-        tmin = tymin; 
-    if (tymax < tmax) 
-        tmax = tymax; 
- 
-    tzmin = (cloudProperties.bounds[sign[2]].z - ray.pos.z) * invdir.z; 
-    tzmax = (cloudProperties.bounds[1-sign[2]].z - ray.pos.z) * invdir.z; 
- 
-    if ((tmin > tzmax) || (tzmin > tmax)) 
-        return false;
-    if (tzmin > tmin)
-        tmin = tzmin;
-    if (tzmax < tmax) 
-        tmax = tzmax;
-
-    return true; 
 }
 
 // https://www.shadertoy.com/view/lldGRM
@@ -186,31 +225,77 @@ vec3 dirFromPolar(float theta, float phi)
         cos(theta));
 }
 
-//---------------------------------------------------------
-// PNRG and Noise functions
-//---------------------------------------------------------
-uint rng_state = 0;
-uint rand_xorshift()
-{
-	// Xorshift algorithm from George Marsaglia's paper
-	rng_state ^= (rng_state << 13);
-	rng_state ^= (rng_state >> 17);
-	rng_state ^= (rng_state << 5);
-	return rng_state;
-}
 
-float generateRandomNumber()
+// https://www.shadertoy.com/view/MtcXRf
+// ray-cylinder intersetion (returns t and normal)
+vec2 intersectCylinder( in vec3 ro, in vec3 rd, in vec3 pa, in vec3 pb, in float ra ) // point a, point b, radius
 {
-	return float(rand_xorshift()) / 4294967296.0f;
-}
+    // center the cylinder, normalize axis
+    vec3 cc = 0.5*(pa+pb); //cylinder center
+    float ch = length(pb-pa); //cylinder height
+    vec3 ca = (pb-pa)/ch; //cylinder axis
+    ch *= 0.5; // half height
 
-void initializeRandom(uint seed) {
-	rng_state = seed;
-	for (int i = 0; i < seed % 7 + 2; i++)
-	{
-        generateRandomNumber();
+    vec3  oc = ro - cc; // cylinder center to ray origin
+
+    float card = dot(ca,rd); // ray direction projected onto cylinder axis
+    float caoc = dot(ca,oc); // cylinder center to ray origin projected onto cylinder axis
+    
+    float a = 1.0 - card*card; // cosinus² (cos² = 1 - sin²)
+    float b = dot( oc, rd) - caoc*card;
+    float c = dot( oc, oc) - caoc*caoc - ra*ra;
+    float h = b*b - a*c;
+
+    if( h < 0.0 )
+    {
+        return vec2(FLT_MAX);
     }
+    h = sqrt(h);
+
+    float t1 = (-b-h)/a; // entry point
+    float t2 = (-b+h)/a; // exit point
+
+    float y = caoc + t1 * card;
+
+    // body
+    if( abs(y) < ch ) 
+    {
+        return vec2( t1, t2 );
+    }
+    
+    // caps
+    float sy = sign(y);
+    float tp = (sy * ch - caoc) / card;
+    if( abs(b + a * tp) < h )
+    {
+        return vec2( tp, ca*sy );
+    }
+
+    return vec2(FLT_MAX);
 }
+
+// https://www.shadertoy.com/view/MtcXRf
+// ray-box intersection
+vec2 intersectBox( in vec3 ro, in vec3 rd, in vec3 cen, in vec3 rad ) 
+{
+    vec3 m = 1.0/rd;
+    vec3 n = m*(ro-cen);
+    vec3 k = abs(m)*rad;
+	
+    vec3 t1 = -n - k;
+    vec3 t2 = -n + k;
+
+	float tN = max( max( t1.x, t1.y ), t1.z );
+	float tF = min( min( t2.x, t2.y ), t2.z );
+	
+	if( tN > tF || tF < 0.0)
+    {
+        return vec2(FLT_MAX);
+    }
+
+	return vec2( tN, tF );
+}
+
 
 //---------------------------------------------------------
 // Phase BSDF - Henyey-Greenstein
@@ -245,186 +330,135 @@ float samplePhase(in const vec3 incomingDirection, in const vec3 sampleDirection
     return pdf;
 }
 
-
-// Scatter ray and evaluate radiance
-void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
+//---------------------------------------------------------
+// Photon Beam Functions
+//---------------------------------------------------------
+// Used in "A Comprehensive Theory of Volumetric Radiance Estimation"
+// K(x) = 15/16 * (1 − x²)², for x in [0, 1]
+float biweightKernel(const float x)
 {
-    if(parameters.isotropic)
+    float sqrTerm =  (1 - x*x);
+    return BIWEIGHT * sqrTerm * sqrTerm;
+}
+
+float getBeamTrasmittance(const uint dataIdx, const float distance)
+{
+    uint count = 0;
+    for(uint i = 0; i < BEAM_TRANSMITTANCE_SAMPLES; i++)
     {
-        float xi = generateRandomNumber();
-        sampleDirection.z = xi * 2.0 - 1.0; // cosTheta
-        float sinTheta = 1.0 - sampleDirection.z * sampleDirection.z; // actually square of sinTheta
-        if (sinTheta > 0.0)
+        if(photonBeamsData[dataIdx].trDistances[i] >= distance)
         {
-            sinTheta = sqrt(max(0,sinTheta));
-            xi = generateRandomNumber();
-            float phi = xi * 2.0 * PI;
-            sampleDirection.x = sinTheta * cos(phi);
-            sampleDirection.y = sinTheta * sin(phi);
+            count++;
+        }
+    }
+
+    return float(count) / float(BEAM_TRANSMITTANCE_SAMPLES);
+}
+
+vec4 accumulateRadiance(const uint beamIdx, const Ray ray)
+{
+    vec3 beamDir = normalize(sortedPhotonBeams[beamIdx].endPos - sortedPhotonBeams[beamIdx].startPos);
+    if(abs(dot(ray.dir, beamDir)) > 0.9f)
+    {
+        return vec4(0); // ray and beam are parallel - no intersection
+    }
+
+    // Get the normal of the beam plane facing camera
+    vec3 tangent = cross(ray.dir, beamDir);
+    vec3 planeNormal = cross(beamDir, tangent);    
+
+    // Get intersection point
+    float t = dot(sortedPhotonBeams[beamIdx].startPos - ray.pos, planeNormal) / dot(planeNormal, ray.dir);
+    vec3 intersection = ray.pos + ray.dir * t;
+
+    // Check if intersection is between beam start and end positions;
+    float beamLength = distance(sortedPhotonBeams[beamIdx].endPos, sortedPhotonBeams[beamIdx].startPos);
+    float intersectionDist = dot(intersection - sortedPhotonBeams[beamIdx].startPos, beamDir);
+    if(intersectionDist < 0 || intersectionDist > beamLength)
+    {
+        return vec4(0); // ray passes above or under the beam - no intersection
+    }
+
+    // Find 1D distance along cross of beam direction and ray direction
+    vec3 projectedIntersection = sortedPhotonBeams[beamIdx].startPos + beamDir * intersectionDist;
+    float dist = distance(intersection, projectedIntersection);
+    if(dist > sortedPhotonBeams[beamIdx].radius)
+    {
+        return vec4(0); // outside of beam radius
+    }
+
+    // Return radiance
+    float kernel = biweightKernel(dist / sortedPhotonBeams[beamIdx].radius);
+    float scatter = sampleCloud(intersection);
+    float cameraTransmittance = sampleShadowVolume(intersection);
+    float beamTransmittance = getBeamTrasmittance(sortedPhotonBeams[beamIdx].dataIdx, intersectionDist);
+    float phase = samplePhase(beamDir, -ray.dir); //torwards the eye
+    float cosAngle = dot(beamDir, -ray.dir);
+    float sinAngle = 1 - cosAngle * cosAngle;
+
+    return kernel * scatter * photonBeamsData[sortedPhotonBeams[beamIdx].dataIdx].power * cameraTransmittance * beamTransmittance * (phase / sinAngle);
+}
+
+// Based on https://devblogs.nvidia.com/thinking-parallel-part-ii-tree-traversal-gpu/
+// Adapted for ray tracing instead of AABB collision detection
+vec4 traverseTree(const Ray ray)
+{
+    vec4 radiance = {0,0,0,0};
+
+    // Allocate traversal stack from thread-local memory,
+    // and push NULL to indicate that there are no postponed nodes.
+    uint stack[64];
+    stack[0] = UINT_MAX;
+    uint stackIdx = 1;
+
+    // Traverse nodes starting from the root.
+    uint currentNode = 0;
+    do
+    {
+        // Check each child node for intersection.
+        uint childL = nodes[currentNode].left;
+        vec3 centerL = (nodes[childL].bounds[0] + nodes[childL].bounds[1]).xyz / 2.0f;
+        vec3 sizeL = (nodes[childL].bounds[1] - nodes[childL].bounds[0]).xyz;
+        bool intersectL = intersectBox(ray.pos, ray.dir, centerL, sizeL).x != FLT_MAX;
+
+        uint childR = nodes[currentNode].left;
+        vec3 centerR = (nodes[childR].bounds[0] + nodes[childR].bounds[1]).xyz / 2.0f;
+        vec3 sizeR = (nodes[childR].bounds[1] - nodes[childR].bounds[0]).xyz;
+        bool intersectR = intersectBox(ray.pos, ray.dir, centerR, sizeR).x != FLT_MAX;
+
+        // Ray intersects a leaf node => sample beam radiance
+        if (intersectL && nodes[childL].isLeaf)
+        {
+            radiance += accumulateRadiance(nodes[childL].left, ray);
+        }
+
+        if (intersectR && nodes[childR].isLeaf)
+        {
+            radiance += accumulateRadiance(nodes[childR].left, ray);
+        }
+
+        // Ray intersects an internal node => traverse.
+        bool traverseL = (intersectL && !nodes[childL].isLeaf);
+        bool traverseR = (intersectR && !nodes[childR].isLeaf);
+
+        if (!traverseL && !traverseR)
+        {
+            stackIdx--;
+            currentNode = stack[stackIdx]; // pop
         }
         else
         {
-            sampleDirection.x = sampleDirection.y = 0.0;
+            currentNode = (traverseL) ? childL : childR;
+            if (traverseL && traverseR)
+            {
+                stack[stackIdx] = childR; // push
+                stackIdx++;
+            }
         }
     }
-    else
-    {
-        float phi = generateRandomNumber() * 2 * PI;
-        float cosTheta = invertCDF(generateRandomNumber());
-        float sinTheta = sqrt(max(0, 1.0f - cosTheta * cosTheta));
-        vec3 t0, t1;
+    while (currentNode != UINT_MAX);
 
-        createOrthonormalBasis(incomingDirection, t0, t1);
-        
-        sampleDirection =
-            sinTheta * cos(phi) * t0 +
-            sinTheta * sin(phi) * t1 +
-            cosTheta * incomingDirection;
-    }
-
-    sampleDirection = normalize(sampleDirection);
-}
-
-//---------------------------------------------------------
-// Photon Map Functions
-//---------------------------------------------------------
-vec4 currentColor = SUNLIGHT_COLOR * parameters.lightIntensity;
-void depositPhotonBeam(in const Ray ray)
-{
-    // Find endpoint
-    float tmax = 0, tmin = 0;
-    intersectCloud(ray, tmax, tmin);
-    vec3 exitPos = ray.pos + ray.dir * tmax;
-
-    PhotonBeam beam;
-    beam.startPos = vec4(ray.pos, 0);
-    beam.endPos = vec4(exitPos, 0);
-    beam.power = SUNLIGHT_COLOR * parameters.lightIntensity;
-    beam.radius = ray.radius;
-    
-    // Add beam to list
-    uint offset = atomicAdd(beamCount.x, 1);
-    photonBeams[offset] = beam;
-}
-
-// Provided by Ludwig Leonart - https://github.com/lleonart1984
-void generateSunRay(in const uint emittedPhotons, out Ray ray, out float pdf)
-{
-    // Calculate ray position on projected area
-    vec4 boundsDiff = cloudProperties.bounds[1] - cloudProperties.bounds[0];
-    vec3 areas = boundsDiff.zxy * boundsDiff.yzx * abs(photonMapProperties.lightDirection.xyz);
-    float totalArea = dot(areas, vec3(1));
-    float selectedSide = generateRandomNumber() * totalArea;
-    vec3 c1 =  vec3(photonMapProperties.lightDirection.x < 0 ? cloudProperties.bounds[0].x : cloudProperties.bounds[1].x,
-                    photonMapProperties.lightDirection.y < 0 ? cloudProperties.bounds[0].y : cloudProperties.bounds[1].y,
-                    photonMapProperties.lightDirection.z < 0 ? cloudProperties.bounds[0].z : cloudProperties.bounds[1].z);
-    vec3 c2 = c1;
-    if (selectedSide < areas.x) // choose yz plane
-    {
-        c1.yz = cloudProperties.bounds[0].yz;
-        c2.yz = cloudProperties.bounds[1].yz;
-        ray.pos = mix(c1, c2, vec3(0, generateRandomNumber(), generateRandomNumber()));
-    }
-    if (selectedSide < areas.x + areas.y) // choose xz plane
-    {
-        c1.xz = cloudProperties.bounds[0].xz;
-        c2.xz = cloudProperties.bounds[1].xz;
-        ray.pos = mix(c1, c2, vec3(generateRandomNumber(), 0, generateRandomNumber()));
-    }
-    else // choose xy plane
-    {
-        c1.xy = cloudProperties.bounds[0].xy;
-        c2.xy = cloudProperties.bounds[1].xy;
-        ray.pos = mix(c1, c2, vec3(generateRandomNumber(), generateRandomNumber(), 0));
-    }
-
-    pdf = 1.0f / totalArea;
-    ray.dir = photonMapProperties.lightDirection.xyz;
-    ray.radius = sqrt(1.0f / (pdf * emittedPhotons)); //sqrt of the solid angle divided by the number of photons
-}
-
-void generateAmbientRay(in const uint emittedPhotons, out Ray ray, out float pdf)
-{
-    vec4 boundsDiff = cloudProperties.bounds[1] - cloudProperties.bounds[0];
-
-    ray.dir = dirFromPolar(generateRandomNumber() * 2.0f * PI, generateRandomNumber() * PI);
-    ray.pos = vec3(generateRandomNumber() * boundsDiff.x, generateRandomNumber() * boundsDiff.y, generateRandomNumber() * boundsDiff.z) + cloudProperties.bounds[0].xyz;
-    pdf = INV_4Pi * (4.0f / dot(boundsDiff.xyz, boundsDiff.xyz)); //4*PI*r² - radius is considered to be length(boundDiff/2)
-
-    float tmax, tmin;
-    intersectCloud(ray, tmax, tmin);
-    ray.pos = ray.pos + ray.dir * tmin;
-    ray.radius = sqrt(1.0f / (pdf * emittedPhotons)); //sqrt of the solid angle divided by the number of photons
-}
-
-//---------------------------------------------------------
-// Cloud Interaction
-//---------------------------------------------------------
-
-// Update ray position based on scattering
-// Returns wether ray should terminate or not
-bool interactWithMedium(inout Ray ray)
-{
-    float tmax, tmin;
-    if(!intersectCloud(ray, tmax, tmin))
-    {
-        return false;
-    }
-    
-    // Deposit beam from start point to the end of the volume
-    depositPhotonBeam(ray);
-
-    // Calculate next scattering position and adjust the radius
-    vec3 exitPoint = ray.pos + ray.dir * tmax;
-    float dist = distance(ray.pos, exitPoint);
-    float t = 0;
-    float extinction = 0;
-    vec3 currentPoint = vec3(0);
-    float zeta = 0;
-    float xi = 0;
-
-    // Loop until not null scatter or cloud left
-    do
-    {
-        zeta = generateRandomNumber();
-        t += -log(zeta) / (cloudProperties.maxExtinction * cloudProperties.densityScaling / cloudProperties.baseScaling);
-        if (t > dist)
-        {
-            return false; // Left the cloud
-        }
-
-        // Update the ray position
-        currentPoint = ray.pos + t * ray.dir;
-
-        // Get the normalized extinction
-        extinction = sampleCloud(currentPoint);
-        
-        xi = generateRandomNumber();
-        if (xi < extinction / cloudProperties.maxExtinction)
-        {
-            break;
-        }
-    } while (true);
-
-    // // Calculate attenuation along distance
-    // vec3 step = (currentPoint - ray.pos) / BEAM_SAMPLES;
-    // float stepSize = length(step);
-    // float scaling = cloudProperties.densityScaling / cloudProperties.baseScaling;
-
-    // float attenuation = 1;
-    // int i = 0;
-    // while(i < BEAM_SAMPLES)
-    // {
-    //     ray.pos += step;
-    //     attenuation *= exp( -stepSize * sampleCloud(ray.pos) * scaling);
-    // }
-    // ray.radius *= attenuation;
-
-    // Advance ray to next position
-    ray.pos = currentPoint;
-
-    xi = generateRandomNumber();
-    return xi > photonMapProperties.absorption; // True: scatter - False: absorption
+    return radiance;
 }
 
 //---------------------------------------------------------
@@ -432,36 +466,18 @@ bool interactWithMedium(inout Ray ray)
 //---------------------------------------------------------
 void main() 
 {
-    if(cloudProperties.densityScaling <= 0)
-    {
-        return;
-    }
+    ivec2 pixelCoord = {gl_GlobalInvocationID.x, gl_GlobalInvocationID.y};
 
-    initializeRandom(pushConstants.seed * (gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x));
-    uint emittedPhotons = gl_WorkGroupSize.y * gl_NumWorkGroups.y * gl_WorkGroupSize.x * gl_NumWorkGroups.x;
+    Ray ray;
+    getCameraRay(pixelCoord, ray);
 
-    // Get ray direction and volume entry point
-    Ray ray = { vec3(0), vec3(0), 0 };
-
-    float pdf;
-    if(generateRandomNumber() < .5f)
-    {
-        generateSunRay(emittedPhotons, ray, pdf);
-        currentColor = SUNLIGHT_COLOR * parameters.lightIntensity / (emittedPhotons * pdf);
-    }
-    else
-    {
-        generateAmbientRay(emittedPhotons, ray, pdf);
-        currentColor = sampleBackground(-ray.dir) / (emittedPhotons *  pdf);
-    }
-    currentColor *= 2;
-
-    // Photon tracer loop - keep scattering and depositing photons until absorbed or left the volume
-    vec3 newDir = vec3(0);
-    while(interactWithMedium(ray))
-    {
-        // Get new scatter direction
-        scatterRay(ray.dir, newDir);
-        ray.dir = newDir;
-    }
+    // Sample beams
+    vec4 result = traverseTree(ray);
+    
+    // Accumulate result
+    vec4 resultOld = imageLoad(resultImage, pixelCoord);
+    result += resultOld * pushConstants.frameCount;
+    result /= pushConstants.frameCount + 1;
+    
+	imageStore(resultImage, pixelCoord, result);
 }
