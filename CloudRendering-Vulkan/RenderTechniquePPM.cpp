@@ -36,7 +36,7 @@ RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* sw
 	};
 	m_ptDescriptorSetLayout = new VulkanDescriptorSetLayout(m_device, ptSetLayoutBindings);
 
-	// Path tracer pipeline;
+	// Photon tracer pipeline;
 	std::vector<VkPushConstantRange> ptPushConstantRanges
 	{
 		initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants))

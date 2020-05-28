@@ -42,7 +42,7 @@ layout (binding = 1, std430) restrict buffer SortedPhotonBeams
     PhotonBeam sortedPhotonBeams[];
 };
 
-layout (binding = 2, std430) restrict buffer Histogram16b
+layout (binding = 2, std430) restrict buffer Histogram4b
 {
     uint histogram[];
 };

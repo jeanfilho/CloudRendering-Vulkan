@@ -96,7 +96,8 @@ layout (binding = 2, std430) restrict buffer SortedPhotonBeams
 
 layout (binding = 3, std430) restrict  buffer PhotonBeamsData
 {
-    uvec4 dataCount;
+    uint dataCount;
+    uint _padding_data[3];
     PhotonBeamData photonBeamsData[];
 };
 

@@ -2,9 +2,11 @@
 
 #include "RenderTechnique.h"
 
+class VulkanBuffer;
+
 class RenderTechniquePPB : public RenderTechnique
 {
-	RenderTechniquePPB(VulkanDevice* device, PushConstants* pushConstants);
+	RenderTechniquePPB(VulkanDevice* device, PushConstants* pushConstants, float initialRadius);
 	~RenderTechniquePPB();
 
 	virtual void GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const override;
@@ -75,6 +77,6 @@ private:
 	std::vector<VulkanImage*> m_images;
 	std::vector<VulkanImageView*> m_imageViews;
 
-	const float m_initialRadius override;
+	const float m_initialRadius = 0;
 	const float m_alpha = .8f;
 };

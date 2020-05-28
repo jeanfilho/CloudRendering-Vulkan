@@ -6,11 +6,11 @@ layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 // Descriptor Set
 //---------------------------------------------------------
 
-layout (binding = 0, std430) restrict buffer Histogram16b
+layout (binding = 0, std430) restrict buffer Histogram4b
 {
     uint histogram[];
 };
-layout (binding = 1, std430) restrict buffer ScannedHistogram16b
+layout (binding = 1, std430) restrict buffer ScannedHistogram4b
 {
     uint scannedHistogram[];
 };

@@ -36,12 +36,12 @@ layout (binding = 1, std430) restrict buffer GlobalSortedPhotonBeams
     PhotonBeam globalSortedPhotonBeams[];
 };
 
-layout (binding = 2, std430) restrict buffer Histogram16b
+layout (binding = 2, std430) restrict buffer Histogram4b
 {
     uint histogram[];
 };
 
-layout (binding = 3, std430) restrict buffer ScannedHistogram16b
+layout (binding = 3, std430) restrict buffer ScannedHistogram4b
 {
     uint scannedHistogram[];
 };

@@ -61,13 +61,15 @@ struct PhotonBeamData
 //---------------------------------------------------------
 layout (binding = 0, std430) restrict  buffer PhotonBeams
 {
-    uvec4 beamCount;
+    uint beamCount;
+    uint _padding_beams[3];
     PhotonBeam photonBeams[];
 };
 
 layout (binding = 1, std430) restrict  buffer PhotonBeamsData
 {
-    uvec4 dataCount;
+    uint dataCount;
+    uint _padding_data[3];
     PhotonBeamData photonBeamsData[];
 };
 
@@ -337,7 +339,7 @@ void depositPhotonBeam(in const Ray ray)
     float segmentSize = beamLength / segments;
 
     // Add shared beam data to buffer, including progressive deep shadow map distances
-    uint dataIdx = atomicAdd(dataCount.x, 1);
+    uint dataIdx = atomicAdd(dataCount, 1);
     photonBeamsData[dataIdx].power = currentColor;
     float denom = cloudProperties.maxExtinction * cloudProperties.densityScaling / cloudProperties.baseScaling;
     for(uint i = 0; i < BEAM_TRANSMITTANCE_SAMPLES; i++)
@@ -375,7 +377,7 @@ void depositPhotonBeam(in const Ray ray)
 
     // Split beams in cilinders with lenght == radius. More or less unit ratio area of volume faces
     PhotonBeam beam;
-    uint offset = atomicAdd(beamCount.x, segments);
+    uint offset = atomicAdd(beamCount, segments);
     for(uint i = 0; i < segments; i++)
     {
         beam.startPos = ray.pos + ray.dir * (i * segmentSize);
