@@ -262,6 +262,7 @@ call ".\Compile.bat"</Command>
     <ClInclude Include="KDTree.h" />
     <ClInclude Include="QueueFamilyIndices.h" />
     <ClInclude Include="RenderTechnique.h" />
+    <ClInclude Include="RenderTechniquePPB.h" />
     <ClInclude Include="RenderTechniquePPM.h" />
     <ClInclude Include="RenderTechniquePT.h" />
     <ClInclude Include="RenderTechniqueSV.h" />

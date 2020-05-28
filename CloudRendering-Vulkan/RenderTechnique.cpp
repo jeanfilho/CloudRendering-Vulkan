@@ -3,9 +3,12 @@
 
 #include "VulkanPipelineLayout.h"
 
-VkPipelineLayout RenderTechnique::GetPipelineLayout() const
+RenderTechnique::RenderTechnique(VulkanDevice* device, PushConstants* pushConstants) : m_device(device), m_pushConstants(pushConstants)
 {
-	return m_pipelineLayout->GetPipelineLayout();
+}
+
+RenderTechnique::~RenderTechnique()
+{
 }
 
 void RenderTechnique::UpdateDescriptorSets()

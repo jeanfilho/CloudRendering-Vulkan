@@ -263,6 +263,9 @@
     <ClInclude Include="RenderTechniquePPM.h">
       <Filter>Header Files\RenderTechniques</Filter>
     </ClInclude>
+    <ClInclude Include="RenderTechniquePPB.h">
+      <Filter>Header Files\RenderTechniques</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\shaders\ComputeTest.comp">

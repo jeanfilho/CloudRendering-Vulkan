@@ -28,6 +28,10 @@ public:
 
 private:
 	VulkanShaderModule* m_shader = nullptr;
+	VulkanDescriptorSetLayout* m_descriptorSetLayout = nullptr;
+	VulkanPipelineLayout* m_pipelineLayout = nullptr;
+	VulkanComputePipeline* m_pipeline = nullptr;
+
 	const ShadowVolumeProperties* m_shadowVolumeProperties = nullptr;
 
 	VulkanSampler* m_cloudSampler = nullptr;

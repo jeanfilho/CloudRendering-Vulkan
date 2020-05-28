@@ -17,19 +17,12 @@ class RenderTechnique
 	friend VulkanDescriptorPool;
 
 public:
-	RenderTechnique(VulkanDevice* device, PushConstants* pushConstants) : m_device(device), m_pushConstants(pushConstants)
-	{
-	}
-	~RenderTechnique()
-	{
-	}
-
-
-	VkPipelineLayout GetPipelineLayout() const;
-	virtual void GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const = 0;
+	RenderTechnique(VulkanDevice* device, PushConstants* pushConstants);
+	~RenderTechnique();
 
 	void UpdateDescriptorSets();
-
+	
+	virtual void GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const = 0;
 	virtual void SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain) = 0;
 	virtual void ClearFrameResources() = 0;
 
@@ -49,9 +42,5 @@ protected:
 	VulkanDevice* m_device = nullptr;
 	PushConstants* m_pushConstants = nullptr;
 	std::vector<VkWriteDescriptorSet> m_writeQueue;
-
-	VulkanDescriptorSetLayout* m_descriptorSetLayout = nullptr;
-	VulkanPipelineLayout* m_pipelineLayout = nullptr;
-	VulkanComputePipeline* m_pipeline = nullptr;
 	std::vector<VkDescriptorSet> m_descriptorSets;
 };

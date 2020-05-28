@@ -52,7 +52,7 @@ RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* sw
 	// Photon Estimate
 	std::vector<char> photonEstimateSPV;
 	utilities::ReadFile("../shaders/PPM_PE.comp.spv", photonEstimateSPV);
-	m_shader = new VulkanShaderModule(m_device, photonEstimateSPV);
+	m_peShader = new VulkanShaderModule(m_device, photonEstimateSPV);
 
 
 	// Photon Estimate Descriptor Set Layout
@@ -78,7 +78,7 @@ RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* sw
 		// Binding 9: Shadow Volume Properties
 		initializers::DescriptorSetLayoutBinding(9, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
 	};
-	m_descriptorSetLayout = new VulkanDescriptorSetLayout(m_device, peSetLayoutBindings);
+	m_peDescriptorSetLayout = new VulkanDescriptorSetLayout(m_device, peSetLayoutBindings);
 
 	// Path tracer pipeline;
 	std::vector<VkPushConstantRange> pePushConstantRanges
@@ -87,11 +87,11 @@ RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* sw
 	};
 	std::vector<VkDescriptorSetLayout> peSetLayouts
 	{
-		m_descriptorSetLayout->GetLayout()
+		m_peDescriptorSetLayout->GetLayout()
 	};
 
-	m_pipelineLayout = new VulkanPipelineLayout(m_device, peSetLayouts, pePushConstantRanges);
-	m_pipeline = new VulkanComputePipeline(m_device, m_pipelineLayout, m_shader);
+	m_pePipelineLayout = new VulkanPipelineLayout(m_device, peSetLayouts, pePushConstantRanges);
+	m_pePipeline = new VulkanComputePipeline(m_device, m_pePipelineLayout, m_peShader);
 }
 
 RenderTechniquePPM::~RenderTechniquePPM()
@@ -101,10 +101,10 @@ RenderTechniquePPM::~RenderTechniquePPM()
 	delete m_ptPipeline;
 	delete m_ptPipelineLayout;
 
-	delete m_shader;
-	delete m_descriptorSetLayout;
-	delete m_pipeline;
-	delete m_pipelineLayout;
+	delete m_peShader;
+	delete m_peDescriptorSetLayout;
+	delete m_pePipeline;
+	delete m_pePipelineLayout;
 
 	FreePhotonMap();
 	ClearFrameResources();
@@ -156,7 +156,7 @@ void RenderTechniquePPM::AllocatePhotonMap(VulkanBuffer* photonMapPropertiesBuff
 void RenderTechniquePPM::GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const
 {
 	outSetLayouts.push_back(m_ptDescriptorSetLayout->GetLayout());
-	outSetLayouts.push_back(m_descriptorSetLayout->GetLayout());
+	outSetLayouts.push_back(m_peDescriptorSetLayout->GetLayout());
 }
 
 void RenderTechniquePPM::SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain)
@@ -268,16 +268,16 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 	// Photon Estimate
 	{
 		// Push constants
-		vkCmdPushConstants(commandBuffer, m_pipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), m_pushConstants);
+		vkCmdPushConstants(commandBuffer, m_pePipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), m_pushConstants);
 
 		// Change Result Image Layout to writeable
 		utilities::CmdTransitionImageLayout(commandBuffer, m_images[currentFrame]->GetImage(), m_images[currentFrame]->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
 		// Bind compute pipeline
-		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline->GetPipeline());
+		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pePipeline->GetPipeline());
 
 		// Bind descriptor set (resources)
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout->GetPipelineLayout(), 0, setSize, m_descriptorSets.data() + setSize, 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pePipelineLayout->GetPipelineLayout(), 0, setSize, m_descriptorSets.data() + setSize, 0, nullptr);
 
 		// Start compute shader
 		vkCmdDispatch(commandBuffer, (m_cameraProperties->GetWidth() / 32) + 1, (m_cameraProperties->GetHeight() / 32) + 1, 1);

@@ -35,7 +35,10 @@ private:
 	void UpdateRadius(unsigned int frameNumber);
 
 private:
-	VulkanShaderModule* m_shader = nullptr;
+	VulkanShaderModule* m_peShader = nullptr;
+	VulkanDescriptorSetLayout* m_peDescriptorSetLayout = nullptr;
+	VulkanPipelineLayout* m_pePipelineLayout = nullptr;
+	VulkanComputePipeline* m_pePipeline = nullptr;
 
 	VulkanShaderModule* m_ptShader = nullptr;
 	VulkanDescriptorSetLayout* m_ptDescriptorSetLayout = nullptr;

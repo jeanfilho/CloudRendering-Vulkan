@@ -17,6 +17,8 @@
 #include "RenderTechniquePT.h"
 #include "RenderTechniqueSV.h"
 #include "RenderTechniquePPM.h"
+#include "RenderTechniquePPB.h"
+
 #include "Grid3D.h"
 #include "Tests.h"
 #include "ImGUILayer.h"
@@ -48,6 +50,7 @@ PushConstants g_pushConstants;
 RenderTechniquePT* g_pathTracingTechnique;
 RenderTechniquePPM* g_photonMappingTechnique;
 RenderTechniqueSV* g_shadowVolumeTechnique;
+RenderTechniquePPB* g_photonBeamsTechnique;
 
 VulkanInstance* g_instance;
 VulkanPhysicalDevice* g_physicalDevice;
@@ -115,7 +118,8 @@ RenderTechnique* g_currentTechnique = nullptr;
 enum class ERenderTechnique
 {
 	PathTracing = 0,
-	PhotonMapping
+	PhotonMapping,
+	PhotonBeams
 };
 
 //----------------------------------------------------------------------
@@ -250,6 +254,9 @@ void SetRenderTechnique(ERenderTechnique renderTechnique)
 		break;
 	case ERenderTechnique::PathTracing:
 		g_currentTechnique = g_pathTracingTechnique;
+		break;
+	case ERenderTechnique::PhotonBeams:
+		g_currentTechnique = g_photonBeamsTechnique;
 		break;
 	}
 }
@@ -873,8 +880,9 @@ int main()
 	InitializeGLFW();
 	InitializeVulkan();
 
-	SetRenderTechnique(ERenderTechnique::PhotonMapping);
+	SetRenderTechnique(ERenderTechnique::PhotonBeams);
 	//SetRenderTechnique(ERenderTechnique::PathTracing);
+	//SetRenderTechnique(ERenderTechnique::PhotonMapping);
 
 	RenderLoop();
 

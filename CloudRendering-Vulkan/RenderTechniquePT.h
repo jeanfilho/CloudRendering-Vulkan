@@ -30,6 +30,10 @@ public:
 
 private:
 	VulkanShaderModule* m_shader = nullptr;
+	VulkanDescriptorSetLayout* m_descriptorSetLayout = nullptr;
+	VulkanPipelineLayout* m_pipelineLayout = nullptr;
+	VulkanComputePipeline* m_pipeline = nullptr;
+
 	const CameraProperties* m_cameraProperties = nullptr;
 	VulkanSwapchain* m_swapchain = nullptr;
 	std::vector<VulkanImage*> m_images;
