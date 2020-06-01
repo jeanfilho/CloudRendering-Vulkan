@@ -21,7 +21,7 @@ RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* sw
 
 	// Photon Tracer Tracer Descriptor Set Layout
 	std::vector<VkDescriptorSetLayoutBinding> ptSetLayoutBindings = {
-		// Binding 0: Output 3D photon map image (read and write)
+		// Binding 0: Output 3D photon map buffer (read and write)
 		initializers::DescriptorSetLayoutBinding(0, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
 		// Binding 1: Photon Map Properties (read)
 		initializers::DescriptorSetLayoutBinding(1, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
@@ -106,27 +106,27 @@ RenderTechniquePPM::~RenderTechniquePPM()
 	delete m_pePipeline;
 	delete m_pePipelineLayout;
 
-	FreePhotonMap();
-	ClearFrameResources();
+	FreeResources();
+	ClearFrameReferences();
 }
 
-void RenderTechniquePPM::FreePhotonMap()
+void RenderTechniquePPM::FreeResources()
 {
 	if (m_photonMap)
 	{
-		delete m_collisionMap;
 		delete m_photonMap;
-
 		m_photonMap = nullptr;
+
+		delete m_collisionMap;
 		m_collisionMap = nullptr;
 	}
 }
 
-void RenderTechniquePPM::AllocatePhotonMap(VulkanBuffer* photonMapPropertiesBuffer)
+void RenderTechniquePPM::AllocateResources(VulkanBuffer* photonMapPropertiesBuffer)
 {
 	if (m_photonMap)
 	{
-		FreePhotonMap();
+		FreeResources();
 	}
 
 	uint32_t bufferSize = m_photonMapProperties->GetTotalSize();
@@ -159,7 +159,7 @@ void RenderTechniquePPM::GetDescriptorSetLayout(std::vector<VkDescriptorSetLayou
 	outSetLayouts.push_back(m_peDescriptorSetLayout->GetLayout());
 }
 
-void RenderTechniquePPM::SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain)
+void RenderTechniquePPM::SetFrameReferences(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain)
 {
 	m_images = frameImages;
 	m_imageViews = frameImageViews;
@@ -176,7 +176,7 @@ void RenderTechniquePPM::SetFrameResources(std::vector<VulkanImage*>& frameImage
 	vkUpdateDescriptorSets(m_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
-void RenderTechniquePPM::ClearFrameResources()
+void RenderTechniquePPM::ClearFrameReferences()
 {
 	m_imageViews.clear();
 	m_images.clear();
@@ -190,7 +190,7 @@ uint32_t RenderTechniquePPM::GetRequiredSetCount() const
 
 void RenderTechniquePPM::GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& outPoolSizes) const
 {
-	outPoolSizes.push_back(initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2));			// Photon and Collision maps
+	outPoolSizes.push_back(initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2));			// Photon and Collision maps
 }
 
 void RenderTechniquePPM::QueueUpdateCloudData(VkDescriptorBufferInfo& cloudBufferInfo, unsigned int frameNr)
@@ -309,12 +309,12 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 
 void RenderTechniquePPM::UpdateRadius(unsigned int frameNumber)
 {
-	if (frameNumber == 0)
+	if (frameNumber <= 1)
 	{
 		m_pushConstants->pmRadius = m_initialRadius;
 	}
 	else
 	{
-		m_pushConstants->pmRadius *= glm::pow((frameNumber - 1 + m_alpha) / (frameNumber), .33333f);
+		m_pushConstants->pmRadius = m_pushConstants->pmRadius * glm::pow((frameNumber - 1 + m_alpha) / (frameNumber), .33333f);
 	}
 }

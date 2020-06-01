@@ -6,12 +6,18 @@ class VulkanBuffer;
 
 class RenderTechniquePPB : public RenderTechnique
 {
-	RenderTechniquePPB(VulkanDevice* device, PushConstants* pushConstants, float initialRadius);
+public:
+	RenderTechniquePPB(VulkanDevice* device, PushConstants* pushConstants, CameraProperties* cameraProperties, float initialRadius);
 	~RenderTechniquePPB();
 
+	void AllocateResources();
+	void FreeResources();
+
+	void UpdatePhotonMapProperties(VulkanBuffer* photonMapPropertiesBuffer, unsigned int frameNr);
+
 	virtual void GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const override;
-	virtual void SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain) override;
-	virtual void ClearFrameResources() override;
+	virtual void SetFrameReferences(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain) override;
+	virtual void ClearFrameReferences() override;
 
 	virtual uint32_t GetRequiredSetCount() const override;
 	virtual void GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& outPoolSizes) const override;
@@ -26,6 +32,42 @@ class RenderTechniquePPB : public RenderTechnique
 	virtual void RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex) override;
 
 private:
+	void UpdateRadius(unsigned int frameNumber);
+
+private:
+
+	// Auxiliary structures and enums
+	struct LBVHPushConstants
+	{
+		uint32_t baseShift = 0;
+		uint32_t currentBuffer = 0;
+		uint32_t workGroupCount = 0;
+
+	} m_lbvhPushConstants;
+
+	/*const enum EResourceOffsets
+	{
+		Tracing = 0,
+		LocalSort = Tracing + 6,
+		PrefixSum = LocalSort + 2,
+		GlobalSort = PrefixSum + 2,
+		Hierarchy = GlobalSort + 3,
+		Fitting = Hierarchy + 2,
+		Estimate = Fitting + 2
+	};*/
+
+	const enum ESetIndex
+	{
+		ESetIndex_Tracing = 0,
+		ESetIndex_LocalSort,
+		ESetIndex_PrefixSum,
+		ESetIndex_GlobalSort,
+		ESetIndex_Hierarchy,
+		ESetIndex_Fitting,
+		ESetIndex_Estimate,
+		ESetIndex_SetCount
+	};
+
 	// Photon Beams
 	VulkanShaderModule* m_estimateShader = nullptr;
 	VulkanDescriptorSetLayout* m_estimateDescriptorSetLayout = nullptr;
@@ -49,11 +91,6 @@ private:
 	VulkanComputePipeline* m_hierarchyPipeline = nullptr;
 
 	// Radix Sort
-	VulkanShaderModule* m_globalSortShader = nullptr;
-	VulkanDescriptorSetLayout* m_globalSortDescriptorSetLayout = nullptr;
-	VulkanPipelineLayout* m_globalSortPipelineLayout = nullptr;
-	VulkanComputePipeline* m_globalSortPipeline = nullptr;
-
 	VulkanShaderModule* m_localSortShader = nullptr;
 	VulkanDescriptorSetLayout* m_localSortDescriptorSetLayout = nullptr;
 	VulkanPipelineLayout* m_localSortPipelineLayout = nullptr;
@@ -64,10 +101,18 @@ private:
 	VulkanPipelineLayout* m_prefixSumPipelineLayout = nullptr;
 	VulkanComputePipeline* m_prefixSumPipeline = nullptr;
 
+	VulkanShaderModule* m_globalSortShader = nullptr;
+	VulkanDescriptorSetLayout* m_globalSortDescriptorSetLayout = nullptr;
+	VulkanPipelineLayout* m_globalSortPipelineLayout = nullptr;
+	VulkanComputePipeline* m_globalSortPipeline = nullptr;
+
 	// GPU Data
+	unsigned int m_currentBeamBuffer = 0;
 	VulkanBuffer* m_photonBeams = nullptr;
-	VulkanBuffer* m_sortedPhotonBeams = nullptr;
-	VulkanBuffer* m_collisionMap = nullptr;
+	VulkanBuffer* m_photonBeamsData = nullptr;
+	VulkanBuffer* m_lbvh = nullptr;
+	VulkanBuffer* m_localHistogram = nullptr;
+	VulkanBuffer* m_scannedHistogram = nullptr;
 
 	// References and Parameters
 	const CameraProperties* m_cameraProperties = nullptr;
@@ -79,4 +124,9 @@ private:
 
 	const float m_initialRadius = 0;
 	const float m_alpha = .8f;
+
+	const size_t m_maxBeamCount = 1024;
+	const unsigned int m_workgroupsPerPass = 28;
+	const unsigned int m_beamsPerWorkgroup = 2;
+	const unsigned int m_beamsPerPass = m_workgroupsPerPass * m_beamsPerWorkgroup;
 };

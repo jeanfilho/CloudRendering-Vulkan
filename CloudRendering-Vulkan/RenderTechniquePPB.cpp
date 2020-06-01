@@ -1,7 +1,10 @@
 #include "stdafx.h"
 #include "RenderTechniquePPB.h"
 
-RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* pushConstants, float initialRadius) : RenderTechnique(device, pushConstants), m_initialRadius(initialRadius)
+#include "VulkanBuffer.h"
+#include "VulkanSwapchain.h"
+
+RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* pushConstants, CameraProperties* cameraProperties, float initialRadius) : RenderTechnique(device, pushConstants), m_initialRadius(initialRadius), m_cameraProperties(cameraProperties)
 {
 	// Photon Tracer
 	{
@@ -85,7 +88,7 @@ RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* push
 	// AABB Fitting
 	{
 		std::vector<char> fittingSPV;
-		utilities::ReadFile("../shaders/PPM_CalculateAABB.comp.spv", fittingSPV);
+		utilities::ReadFile("../shaders/PPB_CalculateAABB.comp.spv", fittingSPV);
 		m_fittingShader = new VulkanShaderModule(m_device, fittingSPV);
 
 		std::vector<VkDescriptorSetLayoutBinding> fittingSetLayoutBindings = {
@@ -98,7 +101,7 @@ RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* push
 
 		std::vector<VkPushConstantRange> fittingPushConstantRanges
 		{
-			initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants))
+			initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(LBVHPushConstants))
 		};
 		std::vector<VkDescriptorSetLayout> fittingSetLayouts
 		{
@@ -112,7 +115,7 @@ RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* push
 	// Hierarchy Generation
 	{
 		std::vector<char> hierarchySPV;
-		utilities::ReadFile("../shaders/PPM_GenerateHierarchy.comp.spv", hierarchySPV);
+		utilities::ReadFile("../shaders/PPB_GenerateHierarchy.comp.spv", hierarchySPV);
 		m_hierarchyShader = new VulkanShaderModule(m_device, hierarchySPV);
 
 		std::vector<VkDescriptorSetLayoutBinding> hierarchySetLayoutBindings = {
@@ -125,7 +128,7 @@ RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* push
 
 		std::vector<VkPushConstantRange> hierarchyPushConstantRanges
 		{
-			initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants))
+			initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(LBVHPushConstants))
 		};
 		std::vector<VkDescriptorSetLayout> hierarchySetLayouts
 		{
@@ -154,7 +157,7 @@ RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* push
 
 		std::vector<VkPushConstantRange> localSortPushConstantRanges
 		{
-			initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t))
+			initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(LBVHPushConstants))
 		};
 		std::vector<VkDescriptorSetLayout> localSortSetLayouts
 		{
@@ -185,7 +188,7 @@ RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* push
 
 		std::vector<VkPushConstantRange> globalSortPushConstantRanges
 		{
-			initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t))
+			initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(LBVHPushConstants))
 		};
 		std::vector<VkDescriptorSetLayout> globalSortSetLayouts
 		{
@@ -212,7 +215,7 @@ RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* push
 
 		std::vector<VkPushConstantRange> prefixSumPushConstantRanges
 		{
-			initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t))
+			initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(LBVHPushConstants))
 		};
 		std::vector<VkDescriptorSetLayout> prefixSumSetLayouts
 		{
@@ -226,5 +229,273 @@ RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* push
 
 RenderTechniquePPB::~RenderTechniquePPB()
 {
-	//TODO
+	// Photon Beams
+	delete m_estimateShader;
+	delete m_estimateDescriptorSetLayout;
+	delete m_estimatePipelineLayout;
+	delete m_estimatePipeline;
+
+	delete m_tracingShader;
+	delete m_tracingDescriptorSetLayout;
+	delete m_tracingPipelineLayout;
+	delete m_tracingPipeline;
+
+	// LBVH
+	delete m_fittingShader;
+	delete m_fittingDescriptorSetLayout;
+	delete m_fittingPipelineLayout;
+	delete m_fittingPipeline;
+
+	delete m_hierarchyShader;
+	delete m_hierarchyDescriptorSetLayout;
+	delete m_hierarchyPipelineLayout;
+	delete m_hierarchyPipeline;
+
+	// Radix Sort
+	delete m_globalSortShader;
+	delete m_globalSortDescriptorSetLayout;
+	delete m_globalSortPipelineLayout;
+	delete m_globalSortPipeline;
+
+	delete m_localSortShader;
+	delete m_localSortDescriptorSetLayout;
+	delete m_localSortPipelineLayout;
+	delete m_localSortPipeline;
+
+	delete m_prefixSumShader;
+	delete m_prefixSumDescriptorSetLayout;
+	delete m_prefixSumPipelineLayout;
+	delete m_prefixSumPipeline;
+
+	FreeResources();
+}
+
+void RenderTechniquePPB::AllocateResources()
+{
+	if (m_photonBeams)
+	{
+		FreeResources();
+	}
+
+	m_currentBeamBuffer = 0;
+
+	VkBufferUsageFlags flags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	m_photonBeams = new VulkanBuffer(m_device, nullptr, sizeof(PhotonBeam), flags, m_maxBeamCount * 2 + 1);		// + 1 to account for the count variable
+	m_photonBeamsData = new VulkanBuffer(m_device, nullptr, sizeof(PhotonBeamData), flags, m_maxBeamCount + 1);	// + 1 to account for the count variable
+	m_localHistogram = new VulkanBuffer(m_device, nullptr, sizeof(uint32_t), flags, 16);						// 4 bits at a time, 16 buckets
+	m_scannedHistogram = new VulkanBuffer(m_device, nullptr, sizeof(uint32_t), flags, 16);						// 4 bits at a time, 16 buckets
+	m_lbvh = new VulkanBuffer(m_device, nullptr, sizeof(TreeNode), flags, 2 * m_maxBeamCount);					// Inner nodes + Leaf nodes - Binary Tree + 1 for the count variable
+
+	auto photonBeamsInfo = initializers::DescriptorBufferInfo(m_photonBeams->GetBuffer(), 0, VK_WHOLE_SIZE);
+	auto photonBeamsDataInfo = initializers::DescriptorBufferInfo(m_photonBeamsData->GetBuffer(), 0, VK_WHOLE_SIZE);
+	auto localHistogramInfo = initializers::DescriptorBufferInfo(m_localHistogram->GetBuffer(), 0, VK_WHOLE_SIZE);
+	auto scannedHistogramInfo = initializers::DescriptorBufferInfo(m_scannedHistogram->GetBuffer(), 0, VK_WHOLE_SIZE);
+	auto lbvhInfo = initializers::DescriptorBufferInfo(m_lbvh->GetBuffer(), 0, VK_WHOLE_SIZE);
+
+	std::vector<VkWriteDescriptorSet> writes;
+
+	// Tracing
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, &photonBeamsInfo));
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, &photonBeamsDataInfo));
+
+	// Local Sort
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_LocalSort], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, &photonBeamsInfo));
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_LocalSort], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, &localHistogramInfo));
+
+	// Prefix Sum
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_PrefixSum], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, &localHistogramInfo));
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_PrefixSum], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, &scannedHistogramInfo));
+
+	// Global Sort
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_GlobalSort], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, &photonBeamsInfo));
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_GlobalSort], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, &localHistogramInfo));
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_GlobalSort], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2, &scannedHistogramInfo));
+
+	// Hierarchy
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Hierarchy], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, &photonBeamsInfo));
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Hierarchy], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, &lbvhInfo));
+
+	// Fitting
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Fitting], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, &photonBeamsInfo));
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Fitting], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, &lbvhInfo));
+
+	// Tracing
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2, &photonBeamsInfo));
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3, &photonBeamsDataInfo));
+
+	vkUpdateDescriptorSets(m_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+}
+
+void RenderTechniquePPB::FreeResources()
+{
+	if (m_photonBeams)
+	{
+		delete m_photonBeams;
+		m_photonBeams = nullptr;
+
+		delete m_photonBeamsData;
+		m_photonBeamsData = nullptr;
+
+		delete m_localHistogram;
+		m_localHistogram = nullptr;
+
+		delete m_scannedHistogram;
+		m_scannedHistogram = nullptr;
+
+		delete m_lbvh;
+		m_lbvh = nullptr;
+	}
+}
+
+void RenderTechniquePPB::UpdatePhotonMapProperties(VulkanBuffer* photonMapPropertiesBuffer, unsigned int frameNr)
+{
+	auto photonMapPropertiesInfo = initializers::DescriptorBufferInfo(photonMapPropertiesBuffer->GetBuffer(), 0, photonMapPropertiesBuffer->GetSize());
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2, &photonMapPropertiesInfo));
+
+	UpdateDescriptorSets();
+}
+
+void RenderTechniquePPB::GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const
+{
+	outSetLayouts.push_back(m_tracingDescriptorSetLayout->GetLayout());
+	outSetLayouts.push_back(m_localSortDescriptorSetLayout->GetLayout());
+	outSetLayouts.push_back(m_prefixSumDescriptorSetLayout->GetLayout());
+	outSetLayouts.push_back(m_globalSortDescriptorSetLayout->GetLayout());
+	outSetLayouts.push_back(m_hierarchyDescriptorSetLayout->GetLayout());
+	outSetLayouts.push_back(m_fittingDescriptorSetLayout->GetLayout());
+	outSetLayouts.push_back(m_estimateDescriptorSetLayout->GetLayout());
+}
+
+void RenderTechniquePPB::SetFrameReferences(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain)
+{
+	m_images = frameImages;
+	m_imageViews = frameImageViews;
+	m_swapchain = swapchain;
+
+	// Update compute bindings for output image
+	std::vector<VkWriteDescriptorSet> writes;
+	auto imageInfo = initializers::DescriptorImageInfo(VK_NULL_HANDLE, m_imageViews[0]->GetImageView(), VK_IMAGE_LAYOUT_GENERAL);
+
+	writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &imageInfo));
+
+	vkUpdateDescriptorSets(m_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+}
+
+void RenderTechniquePPB::ClearFrameReferences()
+{
+	m_imageViews.clear();
+	m_images.clear();
+	m_swapchain = nullptr;
+}
+
+uint32_t RenderTechniquePPB::GetRequiredSetCount() const
+{
+	return ESetIndex_SetCount;
+}
+
+void RenderTechniquePPB::GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& outPoolSizes) const
+{
+	outPoolSizes.push_back(initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6)); // Beams * 2 + Beam Data + Histogram + Scanned Histogram + Tree
+}
+
+void RenderTechniquePPB::QueueUpdateCloudData(VkDescriptorBufferInfo& cloudBufferInfo, unsigned int frameNr)
+{
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &cloudBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6, &cloudBufferInfo));
+}
+
+void RenderTechniquePPB::QueueUpdateCloudDataSampler(VkDescriptorImageInfo& cloudImageInfo, unsigned int frameNr)
+{
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, &cloudImageInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &cloudImageInfo));
+}
+
+void RenderTechniquePPB::QueueUpdateCameraProperties(VkDescriptorBufferInfo& cameraBufferInfo, unsigned int frameNr)
+{
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &cameraBufferInfo));
+}
+
+void RenderTechniquePPB::QueueUpdateParameters(VkDescriptorBufferInfo& parametersBufferInfo, unsigned int frameNr)
+{
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5, &parametersBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 7, &parametersBufferInfo));
+}
+
+void RenderTechniquePPB::QueueUpdateShadowVolume(VkDescriptorBufferInfo& shadowVolumeBufferInfo, unsigned int frameNr)
+{
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 9, &shadowVolumeBufferInfo));
+}
+
+void RenderTechniquePPB::QueueUpdateShadowVolumeSampler(VkDescriptorImageInfo& shadowVolumeImageInfo, unsigned int frameNr)
+{
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8, &shadowVolumeImageInfo));
+}
+
+void RenderTechniquePPB::RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex)
+{
+	m_currentBeamBuffer = 0;
+
+	// Photon Tracing
+	{
+		// Clear previous data - just the count variable is sufficient
+		vkCmdFillBuffer(commandBuffer, m_photonBeams->GetBuffer(), 0, sizeof(uint32_t) * 4, 0);
+
+		// Wait until tracing is complete to start the estimate
+		VkMemoryBarrier memoryBarrier = initializers::MemBarrier(VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_WRITE_BIT);
+		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_NULL_HANDLE, 1, &memoryBarrier, 0, VK_NULL_HANDLE, 0, VK_NULL_HANDLE);
+
+		// Push constants
+		vkCmdPushConstants(commandBuffer, m_tracingPipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), m_pushConstants);
+
+		// Bind compute pipeline
+		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_tracingPipeline->GetPipeline());
+
+		// Bind descriptor set (resources)
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_tracingPipelineLayout->GetPipelineLayout(), ESetIndex_Tracing, 1, m_descriptorSets.data(), 0, nullptr);
+
+		// Start compute shader
+		vkCmdDispatch(commandBuffer, 2, 2, 1);
+	}
+
+	// Change swapchain image layout to dst blit
+	utilities::CmdTransitionImageLayout(commandBuffer, m_swapchain->GetSwapchainImages()[imageIndex], m_swapchain->GetImageFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+	// Change result image layout to scr blit
+	utilities::CmdTransitionImageLayout(commandBuffer, m_images[currentFrame]->GetImage(), m_images[currentFrame]->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	//utilities::CmdTransitionImageLayout(commandBuffer, m_images[currentFrame]->GetImage(), m_images[currentFrame]->GetFormat(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+
+	// Copy result to swapchain image
+	VkImageSubresourceLayers layers{};
+	layers.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	layers.layerCount = 1;
+	layers.mipLevel = 0;
+
+	VkExtent3D extents = m_images[currentFrame]->GetExtent();
+	VkImageBlit blit{};
+	blit.srcOffsets[0] = { 0,0,0 };
+	blit.srcOffsets[1] = { static_cast<int32_t>(extents.width), static_cast<int32_t>(extents.height), static_cast<int32_t>(extents.depth) };
+	blit.srcSubresource = layers;
+	blit.dstOffsets[0] = { 0,0,0 };
+	blit.dstOffsets[1] = { m_cameraProperties->GetWidth(), m_cameraProperties->GetHeight(), 1 };
+	blit.dstSubresource = layers;
+
+	vkCmdBlitImage(commandBuffer, m_images[currentFrame]->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_swapchain->GetSwapchainImages()[imageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+}
+
+void RenderTechniquePPB::UpdateRadius(unsigned int frameNumber)
+{
+	if (frameNumber <= 1)
+	{
+		m_pushConstants->pmRadius = m_initialRadius;
+	}
+	else
+	{
+		float sum = 0;
+		int constant = (frameNumber - 2) * m_beamsPerPass;
+		for (unsigned int j = 1; j <= m_beamsPerPass; j++)
+		{
+			sum += (constant + j + m_alpha) / (constant + j + 1.0f);
+		}
+		m_pushConstants->pmRadius = m_pushConstants->pmRadius * sum;
+	}
 }

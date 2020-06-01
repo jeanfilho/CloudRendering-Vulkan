@@ -98,6 +98,7 @@ layout (push_constant) uniform PushConstants
     int seed;
     uint frameCount;
     float pmRadius;
+    uint currentBuffer;
 } pushConstants;
 
 //---------------------------------------------------------

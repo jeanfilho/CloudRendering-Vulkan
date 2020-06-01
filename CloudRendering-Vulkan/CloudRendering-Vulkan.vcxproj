@@ -219,6 +219,7 @@ call ".\Compile.bat"</Command>
     <ClCompile Include="KDTree.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="RenderTechnique.cpp" />
+    <ClCompile Include="RenderTechniquePPB.cpp" />
     <ClCompile Include="RenderTechniquePPM.cpp" />
     <ClCompile Include="RenderTechniquePT.cpp" />
     <ClCompile Include="RenderTechniqueSV.cpp" />

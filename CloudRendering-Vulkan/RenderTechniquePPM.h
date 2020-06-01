@@ -11,13 +11,13 @@ public:
 	RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, PhotonMapProperties* photonMapProperties, PushConstants* pushConstants, float initialRadius);
 	~RenderTechniquePPM();
 
-	void AllocatePhotonMap(VulkanBuffer* photonMapPropertiesBuffer);
-	void FreePhotonMap();
+	void AllocateResources(VulkanBuffer* photonMapPropertiesBuffer);
+	void FreeResources();
 
 	virtual void GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const override;
 
-	virtual void SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain);
-	virtual void ClearFrameResources();
+	virtual void SetFrameReferences(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain);
+	virtual void ClearFrameReferences();
 
 	virtual uint32_t GetRequiredSetCount() const;
 	virtual void GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& outPoolSizes) const;

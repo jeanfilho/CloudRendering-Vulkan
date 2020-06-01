@@ -5,10 +5,11 @@
 
 struct PushConstants
 {
-	double  time = 0;
+	double time = 0;
 	int seed = 100;
-	unsigned int frameCount = 0;
+	uint32_t frameCount = 1;
 	float pmRadius = 0;
+	uint32_t currentBuffer = 0;
 };
 
 struct CameraProperties
@@ -59,6 +60,11 @@ public:
 	float GetNearPlane()
 	{
 		return nearPlane;
+	}
+
+	glm::vec3 GetFwd()
+	{
+		return forward;
 	}
 };
 
@@ -158,6 +164,38 @@ private:
 
 		basisChange = glm::inverse(glm::mat4{ right, up, lightDirection, glm::vec4(0,0,0,1) });
 	}
+};
+
+struct PhotonBeam
+{
+	uint32_t mortonCode;
+	glm::vec3 startPos;
+	float radius;
+	glm::vec3 endPos;
+	glm::vec4 power;
+};
+
+struct TreeNode
+{
+	uint32_t parent;
+	uint32_t left;
+	uint32_t right;
+	bool isLeaf;
+	glm::vec4 bounds[2];
+	uint32_t processed;
+	uint32_t _padding_node[3];
+};
+
+struct PhotonBeamData
+{
+	glm::vec4 power;
+	float trDistances[16];
+};
+
+struct SortElement
+{
+	uint32_t idx;
+	uint32_t mortonCode;
 };
 
 // Jarosz et al. - 2008 - Advanced Global Illumination using Photon Maps

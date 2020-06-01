@@ -241,31 +241,42 @@ void RecordImGUICommands(uint32_t imageIndex)
 
 void SetRenderTechnique(ERenderTechnique renderTechnique)
 {
-	if (g_currentTechnique == g_photonMappingTechnique)
-	{
-		g_photonMappingTechnique->FreePhotonMap();
-	}
+	g_photonMappingTechnique->FreeResources();
+	g_photonBeamsTechnique->FreeResources();
 
 	switch (renderTechnique)
 	{
 	case ERenderTechnique::PhotonMapping:
 		g_currentTechnique = g_photonMappingTechnique;
-		g_photonMappingTechnique->AllocatePhotonMap(g_photonMapPropertiesBuffer);
+		g_photonMappingTechnique->AllocateResources(g_photonMapPropertiesBuffer);
 		break;
 	case ERenderTechnique::PathTracing:
 		g_currentTechnique = g_pathTracingTechnique;
 		break;
 	case ERenderTechnique::PhotonBeams:
 		g_currentTechnique = g_photonBeamsTechnique;
+		g_photonBeamsTechnique->AllocateResources();
+		for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+		{
+			g_photonBeamsTechnique->UpdatePhotonMapProperties(g_photonMapPropertiesBuffer, i);
+		}
+		g_photonBeamsTechnique->UpdateDescriptorSets();
 		break;
 	}
 }
 
-void UpdateShadowVolumeLight()
+void UpdateShadowVolume()
 {
 	g_photonMapProperties.lightDirection = glm::normalize(glm::vec4(g_UILightDirection, 0));
+	if (g_currentTechnique == g_photonBeamsTechnique)
+	{
+		g_shadowVolumeProperties.SetLightDirection(g_cameraProperties.GetFwd());
+	}
+	else
+	{
+		g_shadowVolumeProperties.SetLightDirection(g_UILightDirection);
+	}
 
-	g_shadowVolumeProperties.SetLightDirection(g_UILightDirection);
 	g_shadowVolumeProperties.SetOrigin(g_cloudProperties.bounds[0], g_cloudProperties.bounds[1]);
 	g_shadowVolumePropertiesBuffer->SetData();
 
@@ -287,12 +298,13 @@ void UpdateShadowVolumeLight()
 	{
 		g_pathTracingTechnique->QueueUpdateShadowVolume(bufferInfo, i);
 		g_photonMappingTechnique->QueueUpdateShadowVolume(bufferInfo, i);
+		g_photonBeamsTechnique->QueueUpdateShadowVolume(bufferInfo, i);
 	}
 	g_pathTracingTechnique->UpdateDescriptorSets();
 	g_photonMappingTechnique->UpdateDescriptorSets();
+	g_photonBeamsTechnique->UpdateDescriptorSets();
 
-
-	g_pushConstants.frameCount = 0;
+	g_pushConstants.frameCount = 1;
 	g_renderStartTime = g_pushConstants.time;
 }
 
@@ -328,35 +340,43 @@ void UpdateCloudData()
 		utilities::EndSingleTimeCommands(g_device, g_computeCommandPool, commandBuffer);
 
 		vkDeviceWaitIdle(g_device->GetDevice());
-	}
+		{
+			g_cloudPropertiesBuffer->SetData();
+			g_photonMapPropertiesBuffer->SetData();
 
-	{
-		g_cloudPropertiesBuffer->SetData();
-		g_photonMapPropertiesBuffer->SetData();
+			auto cloudBufferInfo = initializers::DescriptorBufferInfo(g_cloudPropertiesBuffer->GetBuffer(), 0, g_cloudPropertiesBuffer->GetSize());
+			auto cloudImageInfo = initializers::DescriptorImageInfo(g_cloudSampler->GetSampler(), g_cloudImageView->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-		auto cloudBufferInfo = initializers::DescriptorBufferInfo(g_cloudPropertiesBuffer->GetBuffer(), 0, g_cloudPropertiesBuffer->GetSize());
-		auto cloudImageInfo = initializers::DescriptorImageInfo(g_cloudSampler->GetSampler(), g_cloudImageView->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+			{
+				g_pathTracingTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, i);
+				g_pathTracingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
+
+				g_photonMappingTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, i);
+				g_photonMappingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
+
+				g_photonBeamsTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, i);
+				g_photonBeamsTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
+			}
+			g_pathTracingTechnique->UpdateDescriptorSets();
+			g_photonMappingTechnique->UpdateDescriptorSets();
+			g_photonBeamsTechnique->UpdateDescriptorSets();
+
+			g_shadowVolumeTechnique->QueueUpdateCloudData(cloudBufferInfo, 0);
+			g_shadowVolumeTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, 0);
+			g_shadowVolumeTechnique->UpdateDescriptorSets();
+		}
+
+		g_photonMappingTechnique->FreeResources();
+		g_photonMappingTechnique->AllocateResources(g_photonMapPropertiesBuffer);
 
 		for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 		{
-			g_pathTracingTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, i);
-			g_pathTracingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
-			g_photonMappingTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, i);
-			g_photonMappingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
+			g_photonBeamsTechnique->UpdatePhotonMapProperties(g_photonMapPropertiesBuffer, i);
 		}
-		g_pathTracingTechnique->UpdateDescriptorSets();
-		g_photonMappingTechnique->UpdateDescriptorSets();
 
-		g_shadowVolumeTechnique->QueueUpdateCloudData(cloudBufferInfo, 0);
-		g_shadowVolumeTechnique->QueueUpdateCloudDataSampler(cloudImageInfo, 0);
-		g_shadowVolumeTechnique->UpdateDescriptorSets();
+		UpdateShadowVolume();
 	}
-
-	g_photonMappingTechnique->FreePhotonMap();
-	g_photonMappingTechnique->AllocatePhotonMap(g_photonMapPropertiesBuffer);
-
-
-	UpdateShadowVolumeLight();
 }
 
 void ClearSwapchain()
@@ -366,8 +386,9 @@ void ClearSwapchain()
 	std::cout << "Clearing swapchain...";
 
 	// Recreate result images. They should match the resolution of the screen
-	g_pathTracingTechnique->ClearFrameResources();
-	g_photonMappingTechnique->ClearFrameResources();
+	g_pathTracingTechnique->ClearFrameReferences();
+	g_photonMappingTechnique->ClearFrameReferences();
+	g_photonBeamsTechnique->ClearFrameReferences();
 
 	// Recreate framebuffers
 	for (auto& framebuffer : g_framebuffers)
@@ -431,8 +452,9 @@ void CreateSwapchain()
 			static_cast<uint32_t>(g_cameraProperties.GetHeight()));
 		g_resultImageViews[i] = new VulkanImageView(g_device, g_resultImages[i]);
 	}
-	g_pathTracingTechnique->SetFrameResources(g_resultImages, g_resultImageViews, g_swapchain);
-	g_photonMappingTechnique->SetFrameResources(g_resultImages, g_resultImageViews, g_swapchain);
+	g_pathTracingTechnique->SetFrameReferences(g_resultImages, g_resultImageViews, g_swapchain);
+	g_photonMappingTechnique->SetFrameReferences(g_resultImages, g_resultImageViews, g_swapchain);
+	g_photonBeamsTechnique->SetFrameReferences(g_resultImages, g_resultImageViews, g_swapchain);
 
 	// Recreate command buffers
 	g_computeCommandPool->AllocateCommandBuffers(g_swapchain->GetSwapchainImages().size());
@@ -482,6 +504,7 @@ void Clear()
 	// Compute Resources
 	delete g_pathTracingTechnique;
 	delete g_photonMappingTechnique;
+	delete g_photonBeamsTechnique;
 	delete g_computeCommandPool;
 	delete g_computeDescriptorPool;
 
@@ -582,17 +605,18 @@ void DrawUI()
 
 			for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 			{
-				g_pathTracingTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
 				g_photonMappingTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
-				g_pathTracingTechnique->QueueUpdateParameters(parametersInfo, i);
 				g_photonMappingTechnique->QueueUpdateParameters(parametersInfo, i);
-				g_pathTracingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
 				g_photonMappingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
-			}
-			g_pathTracingTechnique->UpdateDescriptorSets();
-			g_photonMappingTechnique->UpdateDescriptorSets();
 
-			UpdateShadowVolumeLight();
+				g_pathTracingTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
+				g_pathTracingTechnique->QueueUpdateParameters(parametersInfo, i);
+				g_pathTracingTechnique->QueueUpdateCloudData(cloudBufferInfo, i);
+			}
+			g_photonMappingTechnique->UpdateDescriptorSets();
+			g_pathTracingTechnique->UpdateDescriptorSets();
+
+			UpdateShadowVolume();
 		}
 	}
 	ImGui::End();
@@ -765,6 +789,7 @@ bool InitializeVulkan()
 	g_shadowVolumeTechnique = new RenderTechniqueSV(g_device, &g_shadowVolumeProperties, &g_pushConstants);
 	g_pathTracingTechnique = new RenderTechniquePT(g_device, g_swapchain, &g_cameraProperties, &g_pushConstants);
 	g_photonMappingTechnique = new RenderTechniquePPM(g_device, g_swapchain, &g_cameraProperties, &g_photonMapProperties, &g_pushConstants, 20);
+	g_photonBeamsTechnique = new RenderTechniquePPB(g_device, &g_pushConstants, &g_cameraProperties, 20);
 
 	// Compute Descriptor Pool
 	std::vector<VkDescriptorPoolSize> poolSizes =
@@ -779,17 +804,18 @@ bool InitializeVulkan()
 	}
 
 	uint32_t requiredSets = g_shadowVolumeTechnique->GetRequiredSetCount() +
-		(g_pathTracingTechnique->GetRequiredSetCount() + g_photonMappingTechnique->GetRequiredSetCount()) * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+		(g_pathTracingTechnique->GetRequiredSetCount() + g_photonMappingTechnique->GetRequiredSetCount() + g_photonBeamsTechnique->GetRequiredSetCount()) * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 	g_computeDescriptorPool = new VulkanDescriptorPool(g_device, poolSizes, requiredSets);
 
 	g_computeDescriptorPool->AllocateSets(g_photonMappingTechnique, MAX_FRAMES_IN_FLIGHT);
 	g_computeDescriptorPool->AllocateSets(g_pathTracingTechnique, MAX_FRAMES_IN_FLIGHT);
+	g_computeDescriptorPool->AllocateSets(g_photonBeamsTechnique, MAX_FRAMES_IN_FLIGHT);
 	g_computeDescriptorPool->AllocateSets(g_shadowVolumeTechnique, 1);
 
 	// Set shadow volume output image
 	std::vector<VulkanImage*> shadowImg{ g_shadowVolumeImage };
 	std::vector<VulkanImageView*> shadowView{ g_shadowVolumeImageView };
-	g_shadowVolumeTechnique->SetFrameResources(shadowImg, shadowView, nullptr);
+	g_shadowVolumeTechnique->SetFrameReferences(shadowImg, shadowView, nullptr);
 
 	// Transfer cloud data to device image and make it readable by the shader
 	UpdateCloudData();
@@ -802,13 +828,18 @@ bool InitializeVulkan()
 	for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		g_pathTracingTechnique->QueueUpdateParameters(parameterInfo, i);
-		g_photonMappingTechnique->QueueUpdateParameters(parameterInfo, i);
 		g_pathTracingTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
-		g_photonMappingTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
 		g_pathTracingTechnique->QueueUpdateShadowVolumeSampler(shadowImageInfo, i);
+
+		g_photonMappingTechnique->QueueUpdateParameters(parameterInfo, i);
+		g_photonMappingTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
 		g_photonMappingTechnique->QueueUpdateShadowVolumeSampler(shadowImageInfo, i);
 
+		g_photonBeamsTechnique->QueueUpdateParameters(parameterInfo, i);
+		g_photonBeamsTechnique->QueueUpdateCameraProperties(cameraPropertiesInfo, i);
+		g_photonBeamsTechnique->QueueUpdateShadowVolumeSampler(shadowImageInfo, i);
 	}
+	g_photonBeamsTechnique->UpdateDescriptorSets();
 	g_pathTracingTechnique->UpdateDescriptorSets();
 	g_photonMappingTechnique->UpdateDescriptorSets();
 

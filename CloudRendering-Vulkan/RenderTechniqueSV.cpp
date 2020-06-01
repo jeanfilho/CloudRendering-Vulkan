@@ -43,7 +43,7 @@ void RenderTechniqueSV::GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout
 	outSetLayouts.push_back(m_descriptorSetLayout->GetLayout());
 }
 
-void RenderTechniqueSV::SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain)
+void RenderTechniqueSV::SetFrameReferences(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain)
 {
 	m_image = frameImages[0];
 	m_imageView = frameImageViews[0];
@@ -58,7 +58,7 @@ void RenderTechniqueSV::SetFrameResources(std::vector<VulkanImage*>& frameImages
 	vkUpdateDescriptorSets(m_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
-void RenderTechniqueSV::ClearFrameResources()
+void RenderTechniqueSV::ClearFrameReferences()
 {
 }
 

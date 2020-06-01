@@ -23,8 +23,8 @@ public:
 	void UpdateDescriptorSets();
 	
 	virtual void GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const = 0;
-	virtual void SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain) = 0;
-	virtual void ClearFrameResources() = 0;
+	virtual void SetFrameReferences(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain) = 0;
+	virtual void ClearFrameReferences() = 0;
 
 	virtual uint32_t GetRequiredSetCount() const = 0;
 	virtual void GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& outPoolSizes) const = 0;

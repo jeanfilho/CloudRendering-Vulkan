@@ -56,7 +56,7 @@ RenderTechniquePT::~RenderTechniquePT()
 	delete m_pipeline;
 	delete m_pipelineLayout;
 
-	ClearFrameResources();
+	ClearFrameReferences();
 }
 
 void RenderTechniquePT::GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout>& outSetLayouts) const
@@ -64,7 +64,7 @@ void RenderTechniquePT::GetDescriptorSetLayout(std::vector<VkDescriptorSetLayout
 	outSetLayouts.push_back(m_descriptorSetLayout->GetLayout());
 }
 
-void RenderTechniquePT::SetFrameResources(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain)
+void RenderTechniquePT::SetFrameReferences(std::vector<VulkanImage*>& frameImages, std::vector<VulkanImageView*>& frameImageViews, VulkanSwapchain* swapchain)
 {
 	m_images = frameImages;
 	m_imageViews = frameImageViews;
@@ -80,7 +80,7 @@ void RenderTechniquePT::SetFrameResources(std::vector<VulkanImage*>& frameImages
 	vkUpdateDescriptorSets(m_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
-void RenderTechniquePT::ClearFrameResources()
+void RenderTechniquePT::ClearFrameReferences()
 {
 	m_imageViews.clear();
 	m_images.clear();
