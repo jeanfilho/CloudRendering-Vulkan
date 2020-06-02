@@ -34,11 +34,11 @@ const uint MAX_UINT = 4294967295;
 //---------------------------------------------------------
 // Descriptor Set
 //---------------------------------------------------------
-layout (binding = 0, std430) restrict buffer SortedPhotonBeams
+layout (binding = 0, std430) restrict buffer PhotonBeams
 {
     uint beamCount;
     uint _padding_beams[3];
-    PhotonBeam sortedPhotonBeams[];
+    PhotonBeam photonBeams[];
 };
 
 layout (binding = 1, std430) restrict buffer Tree
@@ -48,18 +48,26 @@ layout (binding = 1, std430) restrict buffer Tree
     TreeNode nodes[]; // Actually nodeCount + beamCount size
 };
 
+layout(push_constant) uniform PushConstants
+{
+    uint baseShift;
+    uint currentBuffer;
+    uint workGroupCount;
+};
+
 //---------------------------------------------------------
 // Helper Functions
 //---------------------------------------------------------
+uint readBeamOffset = currentBuffer != 0 ? beamCount : 0;
 // Calculate the AABB for a cylinder
 // https://iquilezles.org/www/articles/diskbbox/diskbbox.htm and https://www.shadertoy.com/view/MtcXRf
 vec4[2] calculateBeamBounds(const uint idx)
 {
     vec4[2] bounds;
 
-    float ra = sortedPhotonBeams[idx].radius;
-    vec3 pa = sortedPhotonBeams[idx].startPos;
-    vec3 pb = sortedPhotonBeams[idx].endPos;
+    float ra = photonBeams[readBeamOffset + idx].radius;
+    vec3 pa = photonBeams[readBeamOffset + idx].startPos;
+    vec3 pb = photonBeams[readBeamOffset + idx].endPos;
 
     // Project cylinder axis into 
     vec3 a = pb - pa;

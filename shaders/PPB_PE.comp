@@ -87,11 +87,11 @@ layout (binding = 1) uniform CameraProperties
 
 } cameraProperties;
 
-layout (binding = 2, std430) restrict buffer SortedPhotonBeams
+layout (binding = 2, std430) restrict buffer PhotonBeams
 {
     uint beamCount;
     uint _padding_beams[3];
-    PhotonBeam sortedPhotonBeams[];
+    PhotonBeam photonBeams[];
 };
 
 layout (binding = 3, std430) restrict  buffer PhotonBeamsData
@@ -152,6 +152,7 @@ layout (push_constant) uniform PushConstants
     int seed;
     uint frameCount;
     float pmRadius;
+    uint currentBuffer;
 } pushConstants;
 
 //---------------------------------------------------------
@@ -336,6 +337,7 @@ float samplePhase(in const vec3 incomingDirection, in const vec3 sampleDirection
 //---------------------------------------------------------
 // Used in "A Comprehensive Theory of Volumetric Radiance Estimation"
 // K(x) = 15/16 * (1 − x²)², for x in [0, 1]
+uint readBeamOffset = pushConstants.currentBuffer != 0 ? beamCount : 0;
 float biweightKernel(const float x)
 {
     float sqrTerm =  (1 - x*x);
@@ -347,7 +349,7 @@ float getBeamTrasmittance(const uint dataIdx, const float distance)
     uint count = 0;
     for(uint i = 0; i < BEAM_TRANSMITTANCE_SAMPLES; i++)
     {
-        if(photonBeamsData[dataIdx].trDistances[i] >= distance)
+        if(photonBeamsData[readBeamOffset + dataIdx].trDistances[i] >= distance)
         {
             count++;
         }
@@ -358,7 +360,7 @@ float getBeamTrasmittance(const uint dataIdx, const float distance)
 
 vec4 accumulateRadiance(const uint beamIdx, const Ray ray)
 {
-    vec3 beamDir = normalize(sortedPhotonBeams[beamIdx].endPos - sortedPhotonBeams[beamIdx].startPos);
+    vec3 beamDir = normalize(photonBeams[readBeamOffset + beamIdx].endPos - photonBeams[readBeamOffset + beamIdx].startPos);
     if(abs(dot(ray.dir, beamDir)) > 0.9f)
     {
         return vec4(0); // ray and beam are parallel - no intersection
@@ -369,35 +371,35 @@ vec4 accumulateRadiance(const uint beamIdx, const Ray ray)
     vec3 planeNormal = cross(beamDir, tangent);    
 
     // Get intersection point
-    float t = dot(sortedPhotonBeams[beamIdx].startPos - ray.pos, planeNormal) / dot(planeNormal, ray.dir);
+    float t = dot(photonBeams[readBeamOffset + beamIdx].startPos - ray.pos, planeNormal) / dot(planeNormal, ray.dir);
     vec3 intersection = ray.pos + ray.dir * t;
 
     // Check if intersection is between beam start and end positions;
-    float beamLength = distance(sortedPhotonBeams[beamIdx].endPos, sortedPhotonBeams[beamIdx].startPos);
-    float intersectionDist = dot(intersection - sortedPhotonBeams[beamIdx].startPos, beamDir);
+    float beamLength = distance(photonBeams[readBeamOffset + beamIdx].endPos, photonBeams[readBeamOffset + beamIdx].startPos);
+    float intersectionDist = dot(intersection - photonBeams[readBeamOffset + beamIdx].startPos, beamDir);
     if(intersectionDist < 0 || intersectionDist > beamLength)
     {
         return vec4(0); // ray passes above or under the beam - no intersection
     }
 
     // Find 1D distance along cross of beam direction and ray direction
-    vec3 projectedIntersection = sortedPhotonBeams[beamIdx].startPos + beamDir * intersectionDist;
+    vec3 projectedIntersection = photonBeams[readBeamOffset + beamIdx].startPos + beamDir * intersectionDist;
     float dist = distance(intersection, projectedIntersection);
-    if(dist > sortedPhotonBeams[beamIdx].radius)
+    if(dist > photonBeams[readBeamOffset + beamIdx].radius)
     {
         return vec4(0); // outside of beam radius
     }
 
     // Return radiance
-    float kernel = biweightKernel(dist / sortedPhotonBeams[beamIdx].radius);
+    float kernel = biweightKernel(dist / photonBeams[readBeamOffset + beamIdx].radius);
     float scatter = sampleCloud(intersection);
     float cameraTransmittance = sampleShadowVolume(intersection);
-    float beamTransmittance = getBeamTrasmittance(sortedPhotonBeams[beamIdx].dataIdx, intersectionDist);
+    float beamTransmittance = getBeamTrasmittance(photonBeams[readBeamOffset + beamIdx].dataIdx, intersectionDist);
     float phase = samplePhase(beamDir, -ray.dir); //torwards the eye
     float cosAngle = dot(beamDir, -ray.dir);
     float sinAngle = 1 - cosAngle * cosAngle;
 
-    return kernel * scatter * photonBeamsData[sortedPhotonBeams[beamIdx].dataIdx].power * cameraTransmittance * beamTransmittance * (phase / sinAngle);
+    return kernel * scatter * photonBeamsData[photonBeams[readBeamOffset + beamIdx].dataIdx].power * cameraTransmittance * beamTransmittance * (phase / sinAngle);
 }
 
 // Based on https://devblogs.nvidia.com/thinking-parallel-part-ii-tree-traversal-gpu/

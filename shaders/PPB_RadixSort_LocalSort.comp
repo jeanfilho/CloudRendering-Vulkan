@@ -32,17 +32,12 @@ const uint ELEMENTS_PER_WORK_GROUP = ELEMENTS_PER_THREAD * gl_WorkGroupSize.x;
 //---------------------------------------------------------
 layout (binding = 0, std430) restrict buffer PhotonBeams
 {
-    uvec4 beamCount;
+    uint beamCount;
+    uint _padding_beams[3];
     PhotonBeam photonBeams[];
 };
 
-layout (binding = 1, std430) restrict buffer SortedPhotonBeams
-{
-    uvec4 sortedBeamCount;
-    PhotonBeam sortedPhotonBeams[];
-};
-
-layout (binding = 2, std430) restrict buffer Histogram4b
+layout (binding = 1, std430) restrict buffer Histogram4b
 {
     uint histogram[];
 };
@@ -50,6 +45,8 @@ layout (binding = 2, std430) restrict buffer Histogram4b
 layout(push_constant) uniform PushConstants
 {
     uint baseShift;
+    uint currentBuffer;
+    uint workGroupCount;
 };
 
 shared SortElement temp[ELEMENTS_PER_WORK_GROUP * 2];
@@ -62,30 +59,39 @@ shared uint localHistogram[16];
 //---------------------------------------------------------
 void main() 
 {
-    if(gl_GlobalInvocationID.x == 0)
-    {
-        sortedBeamCount = beamCount;
-    }
 
     uint workGroupOffset = gl_WorkGroupID.x * ELEMENTS_PER_WORK_GROUP;
     uint startIdx = gl_LocalInvocationID.x * ELEMENTS_PER_THREAD;
     uint endIdx = startIdx + ELEMENTS_PER_THREAD;
+    
+    uint writeBeamOffset;
+    uint readBeamOffset;
+    if(currentBuffer == 0)
+    {
+        writeBeamOffset = beamCount;
+        readBeamOffset = 0;
+    }
+    else
+    {
+        writeBeamOffset = 0;
+        readBeamOffset = beamCount;
+    }
 
     // Check if in bounds
-    if(startIdx >= beamCount.x)
+    if(startIdx >= beamCount)
     {
         startIdx = MAX_UINT;
     }
-    if(endIdx > beamCount.x)
+    if(endIdx > beamCount)
     {
-        endIdx = beamCount.x;
+        endIdx = beamCount;
     }
 
     // Copy elements to shared memory
     for(uint i = startIdx; i < endIdx; i++)
     {
         temp[i].idx = workGroupOffset + i;
-        temp[i].mortonCode = photonBeams[workGroupOffset + i].mortonCode;
+        temp[i].mortonCode = photonBeams[readBeamOffset + workGroupOffset + i].mortonCode;
     }
 
     // Radix sorting loop - 4x 1-bit Radix, as specified by "Designing Efficient Sorting Algorithms for Manycore GPUs"
@@ -150,6 +156,6 @@ void main()
     // Copy elements back to global memory
     for(uint i = startIdx; i < endIdx; i++)
     {
-        sortedPhotonBeams[workGroupOffset + i] = photonBeams[temp[readOffset + i].idx];
+        photonBeams[workGroupOffset + i] = photonBeams[temp[readOffset + i].idx];
     }
 }

@@ -24,24 +24,19 @@ const uint ELEMENTS_PER_WORK_GROUP = ELEMENTS_PER_THREAD * gl_WorkGroupSize.x;
 //---------------------------------------------------------
 // Descriptor Set
 //---------------------------------------------------------
-layout (binding = 0, std430) restrict buffer SortedPhotonBeams
+layout (binding = 0, std430) restrict buffer PhotonBeams
 {
-    uvec4 sortedBeamCount;
-    PhotonBeam sortedPhotonBeams[];
+    uint beamCount;
+    uint _padding_beams[3];
+    PhotonBeam photonBeams[];
 };
 
-layout (binding = 1, std430) restrict buffer GlobalSortedPhotonBeams
-{
-    uvec4 globalSortedBeamCount;
-    PhotonBeam globalSortedPhotonBeams[];
-};
-
-layout (binding = 2, std430) restrict buffer Histogram4b
+layout (binding = 1, std430) restrict buffer Histogram4b
 {
     uint histogram[];
 };
 
-layout (binding = 3, std430) restrict buffer ScannedHistogram4b
+layout (binding = 2, std430) restrict buffer ScannedHistogram4b
 {
     uint scannedHistogram[];
 };
@@ -49,6 +44,8 @@ layout (binding = 3, std430) restrict buffer ScannedHistogram4b
 layout(push_constant) uniform PushConstants
 {
     uint baseShift;
+    uint currentBuffer;
+    uint workGroupCount;
 };
 
 //---------------------------------------------------------
@@ -56,9 +53,17 @@ layout(push_constant) uniform PushConstants
 //---------------------------------------------------------
 void main() 
 {
-    if(gl_GlobalInvocationID.x == 0)
+    uint readBeamOffset;
+    uint writeBeamOffset;
+    if(currentBuffer != 0)
     {
-        globalSortedBeamCount = sortedBeamCount;
+        readBeamOffset = beamCount;
+        writeBeamOffset = 0;
+    }
+    else
+    {
+        readBeamOffset = 0;
+        writeBeamOffset = beamCount;
     }
 
     uint workGroupOffset = gl_WorkGroupID.x * ELEMENTS_PER_WORK_GROUP;
@@ -66,13 +71,13 @@ void main()
     uint endIdx = startIdx + ELEMENTS_PER_THREAD;
 
     // Check if in bounds
-    if(startIdx >= sortedBeamCount.x || startIdx + ELEMENTS_PER_THREAD >= sortedBeamCount.x)
+    if(startIdx >= beamCount || startIdx + ELEMENTS_PER_THREAD >= beamCount)
     {
         return;
     }
-    if(endIdx > sortedBeamCount.x)
+    if(endIdx > beamCount)
     {
-        endIdx = sortedBeamCount.x;
+        endIdx = beamCount;
     }
 
     // Pre-calculate offsets
@@ -82,7 +87,7 @@ void main()
     uint bucketStartIdx = 0;
     for(uint i = 0; i < endIdx - startIdx; i++)
     {
-        maskedIdx = sortedPhotonBeams[workGroupOffset + startIdx + i].mortonCode & mask;
+        maskedIdx = photonBeams[readBeamOffset + workGroupOffset + startIdx + i].mortonCode & mask;
         maskedIdx = maskedIdx >> baseShift;
         offsets[i] = scannedHistogram[maskedIdx * gl_WorkGroupSize.x + gl_WorkGroupID.x];
 
@@ -97,6 +102,6 @@ void main()
     // Copy locally sorted beams to their global positions
     for(uint i = 0; i < endIdx - startIdx; i++)
     {
-        globalSortedPhotonBeams[offsets[i]] = sortedPhotonBeams[workGroupOffset + i];
+        photonBeams[writeBeamOffset + offsets[i]] = photonBeams[readBeamOffset + workGroupOffset + i];
     }
 }

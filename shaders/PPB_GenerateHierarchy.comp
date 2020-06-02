@@ -34,11 +34,11 @@ const uint MAX_UINT = 4294967295;
 //---------------------------------------------------------
 // Descriptor Set
 //---------------------------------------------------------
-layout (binding = 0, std430) restrict buffer SortedPhotonBeams
+layout (binding = 0, std430) restrict buffer PhotonBeams
 {
     uint beamCount;
     uint _padding_beams[3];
-    PhotonBeam sortedPhotonBeams[];
+    PhotonBeam photonBeams[];
 };
 
 layout (binding = 1, std430) restrict buffer Tree
@@ -48,9 +48,17 @@ layout (binding = 1, std430) restrict buffer Tree
     TreeNode nodes[]; // Actually nodeCount + beamCount size
 };
 
+layout(push_constant) uniform PushConstants
+{
+    uint baseShift;
+    uint currentBuffer;
+    uint workGroupCount;
+};
+
 //---------------------------------------------------------
 // Helper Functions
 //---------------------------------------------------------
+uint readBeamOffset = currentBuffer != 0 ? beamCount : 0;
 uint countLeadingZeroes(const uint value)
 {
     return value > 0 ? (31 - uint(floor(log2(value)))) : 32;
@@ -59,8 +67,8 @@ uint countLeadingZeroes(const uint value)
 // From https://devblogs.nvidia.com/thinking-parallel-part-iii-tree-construction-gpu/
 uint findSplit(const uint first, const uint last)
 {
-    uint firstCode = sortedPhotonBeams[first].mortonCode;
-    uint lastCode = sortedPhotonBeams[last].mortonCode;
+    uint firstCode = photonBeams[readBeamOffset + first].mortonCode;
+    uint lastCode = photonBeams[readBeamOffset + last].mortonCode;
 
     // Identical Morton codes => split the range in the middle
     if (firstCode == lastCode)
@@ -83,7 +91,7 @@ uint findSplit(const uint first, const uint last)
 
         if (newSplit < last)
         {
-            uint splitCode = sortedPhotonBeams[newSplit].mortonCode;
+            uint splitCode = photonBeams[readBeamOffset + newSplit].mortonCode;
             uint splitPrefix = countLeadingZeroes(firstCode ^ splitCode);
 
             if (splitPrefix > prefix)
@@ -104,7 +112,7 @@ int getCommonPrefix(const uint first, const uint second)
         return -1;
     }
 
-    return int(countLeadingZeroes(sortedPhotonBeams[first].mortonCode ^ sortedPhotonBeams[second].mortonCode));
+    return int(countLeadingZeroes(photonBeams[readBeamOffset + first].mortonCode ^ photonBeams[readBeamOffset + second].mortonCode));
 }
 
 //---------------------------------------------------------

@@ -17,6 +17,8 @@ layout (binding = 1, std430) restrict buffer ScannedHistogram4b
 
 layout(push_constant) uniform PushConstants
 {
+    uint baseShift;
+    uint currentBuffer;
     uint workGroupCount;
 };
 

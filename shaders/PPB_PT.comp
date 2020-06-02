@@ -1,6 +1,6 @@
 #version 450
 
-layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+layout (local_size_x = 2, local_size_y = 1, local_size_z = 1) in;
 
 
 //---------------------------------------------------------
@@ -73,7 +73,7 @@ layout (binding = 1, std430) restrict  buffer PhotonBeamsData
     PhotonBeamData photonBeamsData[];
 };
 
-layout (binding = 2) uniform PhotonBeamsProperties
+layout (binding = 2) uniform PhotonMapProperties
 {
 	vec4 lightDirection;
     vec4 bounds[2];
@@ -83,7 +83,7 @@ layout (binding = 2) uniform PhotonBeamsProperties
 	float stepSize;
 	float absorption;
     
-} photonBeamsProperties;
+} photonMapProperties;
 
 layout (binding = 3) uniform sampler3D cloudSampler;
 layout (binding = 4) uniform CloudProperties
@@ -114,6 +114,7 @@ layout (push_constant) uniform PushConstants
     int seed;
     uint frameCount;
     float pmRadius;
+    uint currentBuffer;
 } pushConstants;
 
 //---------------------------------------------------------
@@ -305,7 +306,6 @@ void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
 //---------------------------------------------------------
 // Photon Map Functions
 //---------------------------------------------------------
-
 // https://devblogs.nvidia.com/thinking-parallel-part-iii-tree-construction-gpu/
 //Expand 8 bits into 24 bits by inserting two zeroes between each bit
 uint expandBits(in uint v)
@@ -396,12 +396,12 @@ void generateSunRay(in const uint emittedPhotons, out Ray ray, out float pdf)
 {
     // Calculate ray position on projected area
     vec4 boundsDiff = cloudProperties.bounds[1] - cloudProperties.bounds[0];
-    vec3 areas = boundsDiff.zxy * boundsDiff.yzx * abs(photonBeamsProperties.lightDirection.xyz);
+    vec3 areas = boundsDiff.zxy * boundsDiff.yzx * abs(photonMapProperties.lightDirection.xyz);
     float totalArea = dot(areas, vec3(1));
     float selectedSide = generateRandomNumber() * totalArea;
-    vec3 c1 =  vec3(photonBeamsProperties.lightDirection.x < 0 ? cloudProperties.bounds[0].x : cloudProperties.bounds[1].x,
-                    photonBeamsProperties.lightDirection.y < 0 ? cloudProperties.bounds[0].y : cloudProperties.bounds[1].y,
-                    photonBeamsProperties.lightDirection.z < 0 ? cloudProperties.bounds[0].z : cloudProperties.bounds[1].z);
+    vec3 c1 =  vec3(photonMapProperties.lightDirection.x < 0 ? cloudProperties.bounds[0].x : cloudProperties.bounds[1].x,
+                    photonMapProperties.lightDirection.y < 0 ? cloudProperties.bounds[0].y : cloudProperties.bounds[1].y,
+                    photonMapProperties.lightDirection.z < 0 ? cloudProperties.bounds[0].z : cloudProperties.bounds[1].z);
     vec3 c2 = c1;
     if (selectedSide < areas.x) // choose yz plane
     {
@@ -423,7 +423,7 @@ void generateSunRay(in const uint emittedPhotons, out Ray ray, out float pdf)
     }
 
     pdf = 1.0f / totalArea;
-    ray.dir = photonBeamsProperties.lightDirection.xyz;
+    ray.dir = photonMapProperties.lightDirection.xyz;
     ray.radius = sqrt(1.0f / (pdf * emittedPhotons)); //sqrt of the solid angle divided by the number of photons
 }
 
@@ -494,7 +494,7 @@ bool interactWithMedium(inout Ray ray)
     ray.pos = currentPoint;
 
     xi = generateRandomNumber();
-    return xi > photonBeamsProperties.absorption; // True: scatter - False: absorption
+    return xi > photonMapProperties.absorption; // True: scatter - False: absorption
 }
 
 //---------------------------------------------------------
