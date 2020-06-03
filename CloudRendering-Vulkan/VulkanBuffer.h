@@ -11,6 +11,7 @@ public:
 	virtual void SetData();
 	virtual void SetData(size_t count);
 	virtual void SetData(size_t startIndex, size_t count);
+	void GetData();
 	VkBuffer GetBuffer();
 	VkDeviceSize GetSize();
 

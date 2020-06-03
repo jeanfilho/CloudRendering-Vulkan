@@ -41,12 +41,13 @@ struct Ray
     float radius;
 };
 
+
 struct PhotonBeam
 {
-    uint mortonCode;
 	vec3 startPos;
-    float radius;
+    uint mortonCode;
     vec3 endPos;
+    float radius;
     uint dataIdx;
     uint _padding_beam[3];
 };

@@ -31,6 +31,8 @@ public:
 
 	virtual void RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex) override;
 
+	void GetDebug();
+
 private:
 	void UpdateRadius(unsigned int frameNumber);
 
@@ -107,7 +109,6 @@ private:
 	VulkanComputePipeline* m_globalSortPipeline = nullptr;
 
 	// GPU Data
-	unsigned int m_currentBeamBuffer = 0;
 	VulkanBuffer* m_photonBeams = nullptr;
 	VulkanBuffer* m_photonBeamsData = nullptr;
 	VulkanBuffer* m_lbvh = nullptr;
@@ -125,8 +126,16 @@ private:
 	const float m_initialRadius = 0;
 	const float m_alpha = .8f;
 
-	const size_t m_maxBeamCount = 1024;
+	const size_t m_maxBeamCount = 4096;
 	const unsigned int m_workgroupsPerPass = 28;
 	const unsigned int m_beamsPerWorkgroup = 2;
 	const unsigned int m_beamsPerPass = m_workgroupsPerPass * m_beamsPerWorkgroup;
+
+
+	//TEMP DEBUG
+	struct PhotonBeams
+	{
+		glm::uvec4 stuff;
+		PhotonBeam beams[4096];
+	} m_debugBeams;
 };

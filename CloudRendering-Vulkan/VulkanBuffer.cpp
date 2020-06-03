@@ -54,6 +54,16 @@ void VulkanBuffer::SetData(size_t startIndex, size_t count)
 	}
 }
 
+void VulkanBuffer::GetData()
+{
+	
+	if (m_ptr)
+	{
+		vkInvalidateMappedMemoryRanges(m_device->GetDevice(), 1, &initializers::MappedMemoryRange(m_deviceMemory, 0, VK_WHOLE_SIZE));
+		memcpy(m_ptr, m_mappedMemory, (size_t)m_totalSize);
+	}
+}
+
 VkBuffer VulkanBuffer::GetBuffer()
 {
 	return m_buffer;

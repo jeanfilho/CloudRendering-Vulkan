@@ -168,11 +168,12 @@ private:
 
 struct PhotonBeam
 {
-	uint32_t mortonCode;
 	glm::vec3 startPos;
-	float radius;
+	uint32_t mortonCode;
 	glm::vec3 endPos;
-	glm::vec4 power;
+	float radius;
+	uint32_t dataIdx;
+	uint32_t _padding_beam[3];
 };
 
 struct TreeNode

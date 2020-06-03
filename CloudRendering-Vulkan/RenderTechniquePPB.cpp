@@ -277,11 +277,9 @@ void RenderTechniquePPB::AllocateResources()
 		FreeResources();
 	}
 
-	m_currentBeamBuffer = 0;
-
 	VkBufferUsageFlags flags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	m_photonBeams = new VulkanBuffer(m_device, nullptr, sizeof(PhotonBeam), flags, m_maxBeamCount * 2 + 1);		// + 1 to account for the count variable
-	m_photonBeamsData = new VulkanBuffer(m_device, nullptr, sizeof(PhotonBeamData), flags, m_maxBeamCount + 1);	// + 1 to account for the count variable
+	m_photonBeams = new VulkanBuffer(m_device, &m_debugBeams, sizeof(uint32_t), flags, (sizeof(PhotonBeam) / 4) * m_maxBeamCount * 2 + 4);		// + 4 to account for the count variable
+	m_photonBeamsData = new VulkanBuffer(m_device, nullptr, sizeof(uint32_t), flags, (sizeof(PhotonBeamData) / 4) * m_maxBeamCount + 4);	// + 4 to account for the count variable
 	m_localHistogram = new VulkanBuffer(m_device, nullptr, sizeof(uint32_t), flags, 16);						// 4 bits at a time, 16 buckets
 	m_scannedHistogram = new VulkanBuffer(m_device, nullptr, sizeof(uint32_t), flags, 16);						// 4 bits at a time, 16 buckets
 	m_lbvh = new VulkanBuffer(m_device, nullptr, sizeof(TreeNode), flags, 2 * m_maxBeamCount);					// Inner nodes + Leaf nodes - Binary Tree + 1 for the count variable
@@ -433,14 +431,16 @@ void RenderTechniquePPB::QueueUpdateShadowVolumeSampler(VkDescriptorImageInfo& s
 
 void RenderTechniquePPB::RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex)
 {
-	m_currentBeamBuffer = 0;
+	m_lbvhPushConstants.currentBuffer = 0;
+	UpdateRadius(m_pushConstants->frameCount);
 
 	// Photon Tracing
 	{
-		// Clear previous data - just the count variable is sufficient
-		vkCmdFillBuffer(commandBuffer, m_photonBeams->GetBuffer(), 0, sizeof(uint32_t) * 4, 0);
+		// Clear previous data
+		vkCmdFillBuffer(commandBuffer, m_photonBeams->GetBuffer(), 0, VK_WHOLE_SIZE, 0);
+		vkCmdFillBuffer(commandBuffer, m_photonBeamsData->GetBuffer(), 0, VK_WHOLE_SIZE, 0);
 
-		// Wait until tracing is complete to start the estimate
+		// Wait until buffers are cleared
 		VkMemoryBarrier memoryBarrier = initializers::MemBarrier(VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_WRITE_BIT);
 		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_NULL_HANDLE, 1, &memoryBarrier, 0, VK_NULL_HANDLE, 0, VK_NULL_HANDLE);
 
@@ -451,10 +451,39 @@ void RenderTechniquePPB::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_tracingPipeline->GetPipeline());
 
 		// Bind descriptor set (resources)
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_tracingPipelineLayout->GetPipelineLayout(), ESetIndex_Tracing, 1, m_descriptorSets.data(), 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_tracingPipelineLayout->GetPipelineLayout(), 0, 1, m_descriptorSets.data() + ESetIndex_Tracing, 0, nullptr);
 
 		// Start compute shader
-		vkCmdDispatch(commandBuffer, 2, 2, 1);
+		vkCmdDispatch(commandBuffer, m_workgroupsPerPass, 1, 1);
+	}
+
+	// Sorting - n passes
+	unsigned int passes = 1; // should be size of morton code divided by 4 (e.g. 24 / 4)
+	for(unsigned int i = 0; i < passes; i++)
+	{
+		// Clear previous data
+		vkCmdFillBuffer(commandBuffer, m_localHistogram->GetBuffer(), 0, VK_WHOLE_SIZE, 0);
+		vkCmdFillBuffer(commandBuffer, m_scannedHistogram->GetBuffer(), 0, VK_WHOLE_SIZE, 0);
+
+		// Wait until tracing is complete to start the estimate
+		VkMemoryBarrier memoryBarrier = initializers::MemBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_NULL_HANDLE, 1, &memoryBarrier, 0, VK_NULL_HANDLE, 0, VK_NULL_HANDLE);
+
+		// Push constants
+		m_lbvhPushConstants.baseShift = i * 4;
+		vkCmdPushConstants(commandBuffer, m_localSortPipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(LBVHPushConstants), &m_lbvhPushConstants);
+
+		// Bind compute pipeline
+		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_localSortPipeline->GetPipeline());
+
+		// Bind descriptor set (resources)
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_localSortPipelineLayout->GetPipelineLayout(), 0, 1, m_descriptorSets.data() + ESetIndex_LocalSort, 0, nullptr);
+
+		// Start compute shader
+		vkCmdDispatch(commandBuffer, m_maxBeamCount / (256 * 4) + 1, 1, 1);
+
+		// Flip buffers
+		m_lbvhPushConstants.currentBuffer = (m_lbvhPushConstants.currentBuffer + 1) % 2;
 	}
 
 	// Change swapchain image layout to dst blit
@@ -480,6 +509,15 @@ void RenderTechniquePPB::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 	blit.dstSubresource = layers;
 
 	vkCmdBlitImage(commandBuffer, m_images[currentFrame]->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_swapchain->GetSwapchainImages()[imageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+}
+
+void RenderTechniquePPB::GetDebug()
+{
+	if (m_pushConstants->frameCount > 1)
+	{
+		vkDeviceWaitIdle(m_device->GetDevice());
+		m_photonBeams->GetData();
+	}
 }
 
 void RenderTechniquePPB::UpdateRadius(unsigned int frameNumber)

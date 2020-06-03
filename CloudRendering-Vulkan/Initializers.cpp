@@ -375,6 +375,17 @@ VkMemoryBarrier initializers::MemBarrier(VkAccessFlags srcAccessMask, VkAccessFl
 	return info;
 }
 
+VkMappedMemoryRange initializers::MappedMemoryRange(VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size)
+{
+	VkMappedMemoryRange info{};
+	info.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+	info.memory = memory;
+	info.offset = offset;
+	info.size = size;
+
+	return info;
+}
+
 VkImageCreateInfo initializers::ImageCreateInfo(VkImageType imageType, VkFormat format, VkExtent3D extent, uint32_t mipLevels, uint32_t arrayLayers, VkSampleCountFlagBits samples, VkImageUsageFlags usage, VkImageCreateFlags flags /*= 0*/)
 {
 	VkImageCreateInfo info{};

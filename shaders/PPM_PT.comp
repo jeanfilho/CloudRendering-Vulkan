@@ -453,7 +453,7 @@ void main()
     else
     {
         generateAmbientRay(ray, pdf);
-        currentColor = sampleBackground(-ray.dir) / (pdf * emittedPhotons * 2) ;
+        currentColor = sampleBackground(-ray.dir) / (pdf * emittedPhotons) ;
     }
     currentColor *= 2;
 

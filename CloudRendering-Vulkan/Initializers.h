@@ -73,4 +73,6 @@ namespace initializers
 	VkBufferViewCreateInfo BufferViewCreateInfo(VkBuffer buffer, VkFormat format, VkDeviceSize offset, VkDeviceSize range, VkBufferViewCreateFlags flags);
 
 	VkMemoryBarrier MemBarrier(VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask);
+
+	VkMappedMemoryRange MappedMemoryRange(VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size);
 }

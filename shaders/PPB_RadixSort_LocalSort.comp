@@ -7,11 +7,12 @@ layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
 struct PhotonBeam
 {
-    uint mortonCode;
 	vec3 startPos;
-    float radius;
+    uint mortonCode;
     vec3 endPos;
-	vec4 power;
+    float radius;
+    uint dataIdx;
+    uint _padding_beam[3];
 };
 
 struct SortElement
@@ -19,13 +20,6 @@ struct SortElement
     uint idx;
     uint mortonCode;
 };
-
-//---------------------------------------------------------
-// Consts
-//---------------------------------------------------------
-const uint MAX_UINT = 4294967295;
-const uint ELEMENTS_PER_THREAD = 4;
-const uint ELEMENTS_PER_WORK_GROUP = ELEMENTS_PER_THREAD * gl_WorkGroupSize.x;
 
 //---------------------------------------------------------
 // Descriptor Set
@@ -49,82 +43,152 @@ layout(push_constant) uniform PushConstants
     uint workGroupCount;
 };
 
-shared SortElement temp[ELEMENTS_PER_WORK_GROUP * 2];
-shared uint elementsCount[2];
-shared uint elementsWritten[2];
+//---------------------------------------------------------
+// Consts
+//---------------------------------------------------------
+const uint MAX_UINT = 4294967295;
+const uint ELEMENTS_PER_THREAD = 4;
+const uint ELEMENTS_PER_WORK_GROUP = ELEMENTS_PER_THREAD * gl_WorkGroupSize.x;
+
+//---------------------------------------------------------
+// Helper Variables
+//---------------------------------------------------------
+shared SortElement localSort[ELEMENTS_PER_WORK_GROUP * 2];
+shared uint scatterOffsets[ELEMENTS_PER_WORK_GROUP];
+shared uint falses[ELEMENTS_PER_WORK_GROUP];
 shared uint localHistogram[16];
+
+uint workGroupOffset = gl_WorkGroupID.x * ELEMENTS_PER_WORK_GROUP;
+uint localStartIdx = gl_LocalInvocationID.x * ELEMENTS_PER_THREAD;
+uint localEndIdx = localStartIdx + ELEMENTS_PER_THREAD;
+
+//---------------------------------------------------------
+// Helper Functions
+//---------------------------------------------------------
+void calculateScatterOffsets(const uint readOffset, const uint nthShift)
+{
+    uint elementCount = int(min(ELEMENTS_PER_WORK_GROUP, beamCount - gl_WorkGroupID.x * ELEMENTS_PER_WORK_GROUP));
+    uint offset[ELEMENTS_PER_THREAD] = {1, 1, 1, 1};
+
+    // Mark 1 and 0
+    for(uint i = localStartIdx; i < localEndIdx; i++)
+    {
+        falses[i] = (localSort[readOffset + i].mortonCode >> nthShift) ^ 1;
+        scatterOffsets[i] = falses[i]; // reusing final buffer to save memory
+    }
+    barrier();
+ 	
+    // Scan the 1s - Build sum in place up the tree
+    uint currentIdx;
+    for (uint d = elementCount >> 1; d > 0; d >>= 1)
+    {
+        barrier();
+        currentIdx = 0;
+        for(uint i = localStartIdx; i < localEndIdx; i++)
+        {
+            if (i < d)
+            { 
+                uint ai = offset[currentIdx] * (2 * i + 1) - 1;
+                uint bi = offset[currentIdx] * (2 * i + 2) - 1;
+
+                falses[bi] = falses[bi] + falses[ai];
+            }
+            offset[currentIdx] *= 2;
+            currentIdx++;
+        }
+    }
+
+    // Clear the last element 
+    uint totalFalses = falses[elementCount - 1];
+    if (gl_LocalInvocationID.x == 0)
+    { 
+        falses[elementCount - 1] = 0;
+    }
+    
+    // Traverse down tree & build scan
+    for (int d = 1; d < elementCount; d *= 2)
+    {      
+        barrier();
+        currentIdx = 0;
+        for(uint i = localStartIdx; i < localEndIdx; i++)
+        { 
+            offset[currentIdx] >>= 1;
+            if (i < d)
+            { 
+                uint ai = offset[currentIdx] * (2 * i + 1) - 1;
+                uint bi = offset[currentIdx] * (2 * i + 2) - 1;
+                uint t = falses[ai];
+                falses[ai] = falses[bi];
+                falses[bi] += t;
+            }
+            currentIdx++;
+        } 
+    }
+
+    // Wait for all threads to finish
+    barrier();
+
+    // Calculate scatter indexes
+    for(uint i = localStartIdx; i < localEndIdx; i++)
+    {
+        scatterOffsets[i] = (scatterOffsets[i] == 0) ? (i - falses[i] + totalFalses) : falses[i];
+    }
+} 
 
 //---------------------------------------------------------
 // Main
 //---------------------------------------------------------
 void main() 
-{
-
-    uint workGroupOffset = gl_WorkGroupID.x * ELEMENTS_PER_WORK_GROUP;
-    uint startIdx = gl_LocalInvocationID.x * ELEMENTS_PER_THREAD;
-    uint endIdx = startIdx + ELEMENTS_PER_THREAD;
-    
+{    
+    // Calculate current pass beam buffer offset
     uint writeBeamOffset;
     uint readBeamOffset;
     if(currentBuffer == 0)
     {
-        writeBeamOffset = beamCount;
         readBeamOffset = 0;
+        writeBeamOffset = beamCount;
     }
     else
     {
-        writeBeamOffset = 0;
         readBeamOffset = beamCount;
+        writeBeamOffset = 0;
     }
 
     // Check if in bounds
-    if(startIdx >= beamCount)
+    if(workGroupOffset + localStartIdx >= beamCount)
     {
-        startIdx = MAX_UINT;
+        localStartIdx = MAX_UINT;
     }
-    if(endIdx > beamCount)
+    if(workGroupOffset + localEndIdx > beamCount)
     {
-        endIdx = beamCount;
+        localEndIdx = beamCount;
     }
 
     // Copy elements to shared memory
-    for(uint i = startIdx; i < endIdx; i++)
+    for(uint i = localStartIdx; i < localEndIdx; i++)
     {
-        temp[i].idx = workGroupOffset + i;
-        temp[i].mortonCode = photonBeams[readBeamOffset + workGroupOffset + i].mortonCode;
+        localSort[i].idx = workGroupOffset + i;
+        localSort[i].mortonCode = photonBeams[readBeamOffset + localSort[i].idx].mortonCode;
     }
 
     // Radix sorting loop - 4x 1-bit Radix, as specified by "Designing Efficient Sorting Algorithms for Manycore GPUs"
     bool writeToFirstBuffer = false;
-    uint writeOffset = 0;
+    uint writeOffset = ELEMENTS_PER_WORK_GROUP;
     uint readOffset = 0;
     uint iteration = 0;
-    uint mask = 15 << baseShift;
-    while(iteration < 4)
+    uint nthShift = 0;
+    while(iteration < 1)
     {
-        // Count 1-bit split histogram
-        for(uint i = startIdx; i < endIdx; i++)
-        {
-            atomicAdd(elementsCount[temp[readOffset + i].mortonCode & mask], 1);
-        }
-        barrier();
+        // n-th bit to be compared
+        nthShift = baseShift + iteration;
+
+        // Calculate offsets
+        calculateScatterOffsets(readOffset, nthShift);
 
         // Move elements to their respective position
-        for(uint i = startIdx; i < endIdx; i++)
+        for(uint i = localStartIdx; i < localEndIdx; i++)
         {
-            writeOffset = writeToFirstBuffer ? 0 : ELEMENTS_PER_WORK_GROUP;
-            writeOffset += (temp[readOffset + i].mortonCode & mask) == 0 ? 0 : elementsCount[0];
-            writeOffset += atomicAdd(elementsWritten[temp[readOffset + i].mortonCode & mask], 1);
-
-            temp[writeOffset] = temp[readOffset + i];
-        }
-        barrier();
-
-        // Clear auxiliary counting arrays;
-        if(gl_LocalInvocationID.x < 2)
-        {
-            elementsCount[gl_LocalInvocationID.x] = 0;
-            elementsWritten[gl_LocalInvocationID.x] = 0;
+            localSort[writeOffset + scatterOffsets[i]] = localSort[readOffset + i];
         }
 
         // Wait until all threads have cleared their ranges in the elements counting
@@ -133,16 +197,15 @@ void main()
         // Update parameters
         iteration++;
         writeToFirstBuffer = !writeToFirstBuffer;
-        mask = mask << 1;
         readOffset = writeToFirstBuffer ? ELEMENTS_PER_WORK_GROUP : 0;
+        writeOffset = writeToFirstBuffer ? 0 : ELEMENTS_PER_WORK_GROUP;
     }
 
     // Count 4-bit local histogram
     uint maskedIdx = 0;
-    for(uint i = startIdx; i < endIdx; i++)
+    for(uint i = localStartIdx; i < localEndIdx; i++)
     {
-        maskedIdx = temp[readOffset + i].mortonCode & mask;
-        maskedIdx = maskedIdx >> baseShift;
+        maskedIdx = (localSort[readOffset + i].mortonCode >> baseShift) & 15;
         atomicAdd(localHistogram[maskedIdx], 1);
     }
     barrier();
@@ -154,8 +217,10 @@ void main()
     }
     
     // Copy elements back to global memory
-    for(uint i = startIdx; i < endIdx; i++)
+    for(uint i = localStartIdx; i < localEndIdx; i++)
     {
-        photonBeams[workGroupOffset + i] = photonBeams[temp[readOffset + i].idx];
+        photonBeams[writeBeamOffset + workGroupOffset + i] = photonBeams[readBeamOffset + localSort[readOffset + i].idx];
+        photonBeams[writeBeamOffset + workGroupOffset + i]._padding_beam[0] = gl_GlobalInvocationID.x;
+        photonBeams[writeBeamOffset + workGroupOffset + i]._padding_beam[1] = i;
     }
 }

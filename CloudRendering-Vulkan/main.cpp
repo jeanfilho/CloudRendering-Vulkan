@@ -695,6 +695,9 @@ void RenderLoop()
 
 		if (!glfwGetWindowAttrib(g_window, GLFW_ICONIFIED))
 		{
+			// DEBUG TEST - causes crash at random - no clue why :(
+			// g_photonBeamsTechnique->GetDebug();
+
 			DrawUI();
 			DrawFrame();
 			g_pushConstants.frameCount++;
@@ -789,7 +792,7 @@ bool InitializeVulkan()
 	g_shadowVolumeTechnique = new RenderTechniqueSV(g_device, &g_shadowVolumeProperties, &g_pushConstants);
 	g_pathTracingTechnique = new RenderTechniquePT(g_device, g_swapchain, &g_cameraProperties, &g_pushConstants);
 	g_photonMappingTechnique = new RenderTechniquePPM(g_device, g_swapchain, &g_cameraProperties, &g_photonMapProperties, &g_pushConstants, 20);
-	g_photonBeamsTechnique = new RenderTechniquePPB(g_device, &g_pushConstants, &g_cameraProperties, 20);
+	g_photonBeamsTechnique = new RenderTechniquePPB(g_device, &g_pushConstants, &g_cameraProperties, 200);
 
 	// Compute Descriptor Pool
 	std::vector<VkDescriptorPoolSize> poolSizes =
@@ -914,6 +917,8 @@ int main()
 	SetRenderTechnique(ERenderTechnique::PhotonBeams);
 	//SetRenderTechnique(ERenderTechnique::PathTracing);
 	//SetRenderTechnique(ERenderTechnique::PhotonMapping);
+
+	LoadCloudFile("cloud-1940.xyz");
 
 	RenderLoop();
 

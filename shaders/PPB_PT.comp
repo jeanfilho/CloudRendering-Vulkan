@@ -42,10 +42,10 @@ struct Ray
 
 struct PhotonBeam
 {
-    uint mortonCode;
 	vec3 startPos;
-    float radius;
+    uint mortonCode;
     vec3 endPos;
+    float radius;
     uint dataIdx;
     uint _padding_beam[3];
 };
@@ -59,14 +59,14 @@ struct PhotonBeamData
 //---------------------------------------------------------
 // Descriptor Set
 //---------------------------------------------------------
-layout (binding = 0, std430) restrict  buffer PhotonBeams
+layout (binding = 0, std430) restrict buffer PhotonBeams
 {
     uint beamCount;
     uint _padding_beams[3];
     PhotonBeam photonBeams[];
 };
 
-layout (binding = 1, std430) restrict  buffer PhotonBeamsData
+layout (binding = 1, std430) restrict buffer PhotonBeamsData
 {
     uint dataCount;
     uint _padding_data[3];
@@ -303,6 +303,12 @@ void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
     sampleDirection = normalize(sampleDirection);
 }
 
+
+//---------------------------------------------------------
+// Global Variables
+//---------------------------------------------------------
+vec4 currentColor = SUNLIGHT_COLOR * parameters.lightIntensity;
+
 //---------------------------------------------------------
 // Photon Map Functions
 //---------------------------------------------------------
@@ -325,18 +331,10 @@ uint getMortonCode(in const vec3 pos)
     uint z = uint(min(max(relPos.z / 256.f, 0.f), 255.f));
     return (expandBits(x) << 2) + (expandBits(y) << 1) + expandBits(z);
 }
-
-vec4 currentColor = SUNLIGHT_COLOR * parameters.lightIntensity;
-void depositPhotonBeam(in const Ray ray)
+void depositPhotonBeam(in const Ray ray, in const vec3 exitPoint)
 {
     // Find endpoint
-    float tmax = 0, tmin = 0;
-    intersectCloud(ray, tmax, tmin);
-    vec3 exitPos = ray.pos + ray.dir * tmax;
-
-    float beamLength = distance(ray.pos, exitPos);
-    uint segments = uint( beamLength / ray.radius);
-    float segmentSize = beamLength / segments;
+    float beamLength = distance(ray.pos, exitPoint);
 
     // Add shared beam data to buffer, including progressive deep shadow map distances
     uint dataIdx = atomicAdd(dataCount, 1);
@@ -375,8 +373,11 @@ void depositPhotonBeam(in const Ray ray)
         photonBeamsData[dataIdx].trDistances[i] = t;
     }
 
-    // Split beams in cilinders with lenght == radius. More or less unit ratio area of volume faces
+    // Split beams in cilinders with lenght == radius
+    // More or less unit ratio area of volume faces
     PhotonBeam beam;
+    uint segments = uint( beamLength / ray.radius) + 1;
+    float segmentSize = beamLength / segments;
     uint offset = atomicAdd(beamCount, segments);
     for(uint i = 0; i < segments; i++)
     {
@@ -424,7 +425,8 @@ void generateSunRay(in const uint emittedPhotons, out Ray ray, out float pdf)
 
     pdf = 1.0f / totalArea;
     ray.dir = photonMapProperties.lightDirection.xyz;
-    ray.radius = sqrt(1.0f / (pdf * emittedPhotons)); //sqrt of the solid angle divided by the number of photons
+    //ray.radius = sqrt(1.0f / (pdf * emittedPhotons)); //sqrt of the solid angle divided by the number of photons
+    ray.radius = pushConstants.pmRadius; // progressive radius
 }
 
 void generateAmbientRay(in const uint emittedPhotons, out Ray ray, out float pdf)
@@ -438,7 +440,8 @@ void generateAmbientRay(in const uint emittedPhotons, out Ray ray, out float pdf
     float tmax, tmin;
     intersectCloud(ray, tmax, tmin);
     ray.pos = ray.pos + ray.dir * tmin;
-    ray.radius = sqrt(1.0f / (pdf * emittedPhotons)); //sqrt of the solid angle divided by the number of photons
+    //ray.radius = sqrt(1.0f / (pdf * emittedPhotons)); //sqrt of the solid angle divided by the number of photons
+    ray.radius = pushConstants.pmRadius; // progressive radius
 }
 
 //---------------------------------------------------------
@@ -456,10 +459,10 @@ bool interactWithMedium(inout Ray ray)
     }
     
     // Deposit beam from start point to the end of the volume
-    depositPhotonBeam(ray);
+    vec3 exitPoint = ray.pos + ray.dir * tmax;
+    depositPhotonBeam(ray, exitPoint);
 
     // Calculate next scattering position and adjust the radius
-    vec3 exitPoint = ray.pos + ray.dir * tmax;
     float dist = distance(ray.pos, exitPoint);
     float t = 0;
     float extinction = 0;
@@ -524,7 +527,7 @@ void main()
         generateAmbientRay(emittedPhotons, ray, pdf);
         currentColor = sampleBackground(-ray.dir) / (emittedPhotons *  pdf);
     }
-    currentColor *= 2;
+    currentColor *= 2; // Russian roulette compensation
 
     // Photon tracer loop - keep scattering and depositing photons until absorbed or left the volume
     vec3 newDir = vec3(0);

@@ -7,13 +7,13 @@ layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
 struct PhotonBeam
 {
-    uint mortonCode;
 	vec3 startPos;
-    float radius;
+    uint mortonCode;
     vec3 endPos;
-	vec4 power;
+    float radius;
+    uint dataIdx;
+    uint _padding_beam[3];
 };
-
 //---------------------------------------------------------
 // Consts
 //---------------------------------------------------------
