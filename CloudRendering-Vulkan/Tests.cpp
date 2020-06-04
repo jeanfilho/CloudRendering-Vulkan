@@ -4,29 +4,11 @@
 #include "UniformBuffers.h"
 #include "Grid3D.h"
 
+#include<random>
+
 void tests::RunTests()
 {
-	glm::vec3 dir(0, 1, 0);
-	glm::vec3 t0, t1;
-	createOrthonormalBasis(dir, t0, t1);
-
-	CloudProperties cloudProperties;
-	cloudProperties.bounds[0] = glm::vec4(-100, -100, -100, 0);
-	cloudProperties.bounds[1] = glm::vec4(100, 100, 100, 0);
-
-	glm::vec3 intersectionPoint,
-		rayPos = glm::vec3(0, 0, -100),
-		rayDir = glm::normalize(glm::vec3(0, 0, 1));
-
-	intersectCloud(cloudProperties, rayDir, rayPos, intersectionPoint);
-
-	ShadowVolumeProperties shadowVolumeProperties;
-	shadowVolumeProperties.SetLightDirection(glm::vec3(0, 0, 1));
-	shadowVolumeProperties.SetOrigin(cloudProperties.bounds[0], cloudProperties.bounds[1]);
-
-	shadowVolumeTest(glm::ivec2(shadowVolumeProperties.voxelAxisCount) / 2, shadowVolumeProperties, cloudProperties);
-
-
+	localSort();
 
 	bool test = true;
 }
@@ -46,7 +28,7 @@ int tests::isNegativeSign(float value)
 	return int(value < 0);
 }
 
-bool tests::intersectCloud(CloudProperties cloudProperties, glm::vec3& rayDir, glm::vec3& rayPos, glm::vec3& intersectionPoint)
+bool tests::intersectCloud(CloudProperties& cloudProperties, glm::vec3& rayDir, glm::vec3& rayPos, glm::vec3& intersectionPoint)
 {
 	float tmin, tmax, tymin, tymax, tzmin, tzmax;
 	glm::vec3 invdir = 1.0f / rayDir;
@@ -126,4 +108,123 @@ glm::vec3 tests::calculateVoxelPosition(glm::uvec3 voxelIdx, ShadowVolumePropert
 		voxelIdx.x * shadowVolumeProperties.voxelSize * shadowVolumeProperties.right +
 		voxelIdx.y * shadowVolumeProperties.voxelSize * shadowVolumeProperties.up +
 		voxelIdx.z * shadowVolumeProperties.voxelSize * shadowVolumeProperties.lightDirection);
+}
+
+void tests::localSort()
+{
+	std::mt19937 gen(1); //Standard mersenne_twister_engine seeded with rd()
+	std::uniform_int_distribution dist(0, 255);
+	std::vector<unsigned int> codes;
+	for (unsigned int i = 0; i < 1024; i++)
+	{
+		codes.push_back(dist(gen));
+	}
+
+	std::vector<unsigned int> temp(codes);
+	std::vector<unsigned int> scatterOffsets(codes.size());
+	for (unsigned int i = 0; i < 8; i++)
+	{
+		scatterOffsets.clear();
+		radixSort(temp, scatterOffsets, i);
+	}
+
+
+	for (unsigned int i = 0; i < 1024; i++)
+	{
+		codes[scatterOffsets[i]] = temp[i];
+	}
+}
+
+void tests::radixSort(std::vector<unsigned int>& keys, std::vector<unsigned int>& scatterOffsets, unsigned int nthShift)
+{
+	const size_t elementCount = keys.size();
+	std::vector<unsigned int> temp(elementCount);
+	std::vector<unsigned int> falses(elementCount);
+
+	unsigned int startIdx, endIdx;
+	unsigned int* offset = new unsigned int[4 * 1024];
+	std::fill_n(offset, 4 * 1024, 1);
+
+	memcpy(temp.data(), keys.data(), elementCount * sizeof(unsigned int));
+
+	for (unsigned int thread = 0; thread < 256; thread++)
+	{
+		startIdx = thread * 4;
+		endIdx = startIdx + 4;
+
+		// Mark 1 and 0
+		for (unsigned int i = startIdx; i < endIdx; i++)
+		{
+			falses[i] = ((temp[i] >> nthShift) & 1) ^ 1;
+			scatterOffsets[i] = falses[i]; // reusing final buffer to save memory
+		}
+	}
+
+	// Scan the 1s - Build sum in place up the tree
+	unsigned int currentIdx;
+	for (unsigned int d = static_cast<unsigned int>(elementCount) >> 1; d > 0; d >>= 1)
+	{
+		for (unsigned int thread = 0; thread < 256; thread++)
+		{
+			startIdx = thread * 4;
+			endIdx = startIdx + 4;
+
+			currentIdx = thread * 4;
+			for (unsigned int i = startIdx; i < endIdx; i++)
+			{
+				if (i < d)
+				{
+					unsigned int ai = offset[currentIdx] * (2 * i + 1) - 1;
+					unsigned int bi = offset[currentIdx] * (2 * i + 2) - 1;
+
+					falses[bi] += falses[ai];
+				}
+				offset[currentIdx] *= 2;
+				currentIdx++;
+			}
+		}
+	}
+
+	// Clear the last element 
+	unsigned int totalFalses = falses[elementCount - 1];
+	falses[elementCount - 1] = 0;
+
+	// Traverse down tree & build scan
+	for (unsigned int d = 1; d < elementCount; d *= 2)
+	{
+
+		for (unsigned int thread = 0; thread < 256; thread++)
+		{
+			startIdx = thread * 4;
+			endIdx = startIdx + 4;
+
+			currentIdx = thread * 4;
+			for (unsigned int i = startIdx; i < endIdx; i++)
+			{
+				offset[currentIdx] >>= 1;
+				if (i < d)
+				{
+					unsigned int ai = offset[currentIdx] * (2 * i + 1) - 1;
+					unsigned int bi = offset[currentIdx] * (2 * i + 2) - 1;
+					unsigned int t = falses[ai];
+					falses[ai] = falses[bi];
+					falses[bi] += t;
+				}
+				currentIdx++;
+			}
+		}
+	}
+
+	// Calculate scatter indexes
+	for (unsigned int thread = 0; thread < 256; thread++)
+	{
+		startIdx = thread * 4;
+		endIdx = startIdx + 4;
+		for (unsigned int i = startIdx; i < endIdx; i++)
+		{
+			scatterOffsets[i] = (scatterOffsets[i] == 0) ? (i - falses[i] + totalFalses) : falses[i];
+		}
+	}
+
+	delete[] offset;
 }

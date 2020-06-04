@@ -480,7 +480,7 @@ void RenderTechniquePPB::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_localSortPipelineLayout->GetPipelineLayout(), 0, 1, m_descriptorSets.data() + ESetIndex_LocalSort, 0, nullptr);
 
 		// Start compute shader
-		vkCmdDispatch(commandBuffer, m_maxBeamCount / (256 * 4) + 1, 1, 1);
+		vkCmdDispatch(commandBuffer, static_cast<uint32_t>(m_maxBeamCount) / (256 * 4) + 1, 1, 1);
 
 		// Flip buffers
 		m_lbvhPushConstants.currentBuffer = (m_lbvhPushConstants.currentBuffer + 1) % 2;

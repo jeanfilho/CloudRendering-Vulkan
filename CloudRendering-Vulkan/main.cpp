@@ -902,7 +902,7 @@ int main()
 	std::srand(0);
 
 #ifdef _DEBUG
-	tests::RunTests();
+	//tests::RunTests();
 #endif
 
 	// Create default data
