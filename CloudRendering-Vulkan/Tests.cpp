@@ -115,42 +115,35 @@ void tests::localSort()
 	std::mt19937 gen(1); //Standard mersenne_twister_engine seeded with rd()
 	std::uniform_int_distribution dist(0, 255);
 	std::vector<unsigned int> codes;
-	for (unsigned int i = 0; i < 1024; i++)
+	for (unsigned int i = 0; i < 176; i++)
 	{
 		codes.push_back(dist(gen));
 	}
 
 	std::vector<unsigned int> temp(codes);
-	std::vector<unsigned int> scatterOffsets(codes.size());
+	std::vector<unsigned int> scatterOffsets(codes.size());	
 	for (unsigned int i = 0; i < 8; i++)
 	{
-		scatterOffsets.clear();
-		radixSort(temp, scatterOffsets, i);
+		radixSort(codes, scatterOffsets, i);
 	}
 
-
-	for (unsigned int i = 0; i < 1024; i++)
-	{
-		codes[scatterOffsets[i]] = temp[i];
-	}
+	bool test = true;
 }
 
 void tests::radixSort(std::vector<unsigned int>& keys, std::vector<unsigned int>& scatterOffsets, unsigned int nthShift)
 {
-	const size_t elementCount = keys.size();
-	std::vector<unsigned int> temp(elementCount);
+	const size_t elementCount = unsigned int(std::pow(2.0, std::ceil(std::log2(keys.size()))));
+	std::vector<unsigned int> temp(keys);
 	std::vector<unsigned int> falses(elementCount);
 
 	unsigned int startIdx, endIdx;
-	unsigned int* offset = new unsigned int[4 * 1024];
-	std::fill_n(offset, 4 * 1024, 1);
-
-	memcpy(temp.data(), keys.data(), elementCount * sizeof(unsigned int));
+	std::vector<unsigned int> offset;
+	offset.resize(1024, 1);
 
 	for (unsigned int thread = 0; thread < 256; thread++)
 	{
 		startIdx = thread * 4;
-		endIdx = startIdx + 4;
+		endIdx = std::min(startIdx + 4, static_cast<unsigned int>(keys.size()));
 
 		// Mark 1 and 0
 		for (unsigned int i = startIdx; i < endIdx; i++)
@@ -167,7 +160,7 @@ void tests::radixSort(std::vector<unsigned int>& keys, std::vector<unsigned int>
 		for (unsigned int thread = 0; thread < 256; thread++)
 		{
 			startIdx = thread * 4;
-			endIdx = startIdx + 4;
+			endIdx = std::min(startIdx + 4, static_cast<unsigned int>(keys.size()));
 
 			currentIdx = thread * 4;
 			for (unsigned int i = startIdx; i < endIdx; i++)
@@ -196,7 +189,7 @@ void tests::radixSort(std::vector<unsigned int>& keys, std::vector<unsigned int>
 		for (unsigned int thread = 0; thread < 256; thread++)
 		{
 			startIdx = thread * 4;
-			endIdx = startIdx + 4;
+			endIdx = std::min(startIdx + 4, static_cast<unsigned int>(keys.size()));
 
 			currentIdx = thread * 4;
 			for (unsigned int i = startIdx; i < endIdx; i++)
@@ -219,12 +212,12 @@ void tests::radixSort(std::vector<unsigned int>& keys, std::vector<unsigned int>
 	for (unsigned int thread = 0; thread < 256; thread++)
 	{
 		startIdx = thread * 4;
-		endIdx = startIdx + 4;
+		endIdx = std::min(startIdx + 4, static_cast<unsigned int>(keys.size()));
+
 		for (unsigned int i = startIdx; i < endIdx; i++)
 		{
 			scatterOffsets[i] = (scatterOffsets[i] == 0) ? (i - falses[i] + totalFalses) : falses[i];
+			keys[scatterOffsets[i]] = temp[i];
 		}
 	}
-
-	delete[] offset;
 }

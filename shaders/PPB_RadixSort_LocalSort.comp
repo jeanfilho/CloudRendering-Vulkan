@@ -76,6 +76,14 @@ void calculateScatterOffsets(const uint localReadOffset, const uint nthShift)
         offset[i] = 1;
     }
 
+    // Clear previous falses scan
+    for(uint i = gl_LocalInvocationID.x * 4; i < gl_LocalInvocationID.x * 4 + 4; i++)
+    {
+        falses[i] = 0;
+    }
+
+    barrier();
+
     // Mark 1 and 0
     for(uint i = localStartIdx; i < localEndIdx; i++)
     {
@@ -151,12 +159,6 @@ void main()
         return;
     }
 
-    // Finding lowest power of 2 higher than the amount of sort items
-    // while(sortItemCount < workGroupItems)
-    // {
-    //     sortItemCount *= 2;
-    // }
-
     // Calculate current pass buffer offset
     uint globalWriteOffset;
     uint globalReadOffset;
@@ -187,15 +189,14 @@ void main()
         localSort[i].globalIdx = workGroupOffset + i;
         localSort[i].mortonCode = photonBeams[globalReadOffset + localSort[i].globalIdx].mortonCode;
     }
-
-    // Local sort offsets
+    barrier();
 
     // Radix sorting loop - 4x 1-bit Radix, as specified by "Designing Efficient Sorting Algorithms for Manycore GPUs"
     bool writeToFirstBuffer = false;
     uint localReadOffset = writeToFirstBuffer ? ELEMENTS_PER_WORK_GROUP : 0;
     uint localWriteOffset = writeToFirstBuffer ? 0 : ELEMENTS_PER_WORK_GROUP;
     uint nthShift = 0;
-    for(uint i = 0; i < 1; i++)
+    for(uint i = 0; i < 4; i++)
     {
         // n-th bit to be compared
         nthShift = baseShift + i;
