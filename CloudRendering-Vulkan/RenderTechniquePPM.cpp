@@ -132,7 +132,7 @@ void RenderTechniquePPM::AllocateResources(VulkanBuffer* photonMapPropertiesBuff
 	uint32_t bufferSize = m_photonMapProperties->GetTotalSize();
 
 	VkBufferUsageFlags flags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	m_photonMap = new VulkanBuffer(m_device, nullptr, sizeof(Photon)*32, flags, bufferSize);
+	m_photonMap = new VulkanBuffer(m_device, nullptr, sizeof(Photon) * elementsPerCell, flags, bufferSize);
 	m_collisionMap = new VulkanBuffer(m_device, nullptr, sizeof(glm::uvec4), flags, bufferSize);
 
 	std::vector<VkWriteDescriptorSet> writes;
@@ -258,7 +258,7 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_ptPipelineLayout->GetPipelineLayout(), 0, setSize, m_descriptorSets.data(), 0, nullptr);
 
 		// Start compute shader
-		vkCmdDispatch(commandBuffer, 2, 2, 1);
+		vkCmdDispatch(commandBuffer, 200, 1, 1);
 	}
 
 	// Wait until tracing is complete to start the estimate

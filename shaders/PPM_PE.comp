@@ -24,6 +24,7 @@ struct Photon
 //---------------------------------------------------------
 // Constants
 //---------------------------------------------------------
+const int ELEMENTS_PER_CELL = 32;
 const vec4 SUNLIGHT_COLOR = vec4(1.0f);
 const float PI = 3.14159265359;
 const float INV_4Pi = 1.0f/(4.0f * PI);
@@ -336,7 +337,7 @@ vec4 samplePhotonMap(in const vec3 pos, in const vec3 dir, in const float scatte
                 currentIdx = x + (y + z * photonMapProperties.voxelCount.y) * photonMapProperties.voxelCount.x;
                 for(int i = 0; i < collisions[currentIdx].x; i++)
                 {                
-                    offsettedIdx = currentIdx * 32 + i;
+                    offsettedIdx = currentIdx * ELEMENTS_PER_CELL + i;
                     distVector = photons[offsettedIdx].position.xyz - pos;
                     if(dot(distVector, distVector) <= sqrRadius)
                     {

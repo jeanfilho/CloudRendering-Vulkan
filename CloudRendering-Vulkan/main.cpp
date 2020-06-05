@@ -791,7 +791,7 @@ bool InitializeVulkan()
 	// Render Techniques
 	g_shadowVolumeTechnique = new RenderTechniqueSV(g_device, &g_shadowVolumeProperties, &g_pushConstants);
 	g_pathTracingTechnique = new RenderTechniquePT(g_device, g_swapchain, &g_cameraProperties, &g_pushConstants);
-	g_photonMappingTechnique = new RenderTechniquePPM(g_device, g_swapchain, &g_cameraProperties, &g_photonMapProperties, &g_pushConstants, 20);
+	g_photonMappingTechnique = new RenderTechniquePPM(g_device, g_swapchain, &g_cameraProperties, &g_photonMapProperties, &g_pushConstants, 10);
 	g_photonBeamsTechnique = new RenderTechniquePPB(g_device, &g_pushConstants, &g_cameraProperties, 200);
 
 	// Compute Descriptor Pool
@@ -914,11 +914,12 @@ int main()
 	InitializeGLFW();
 	InitializeVulkan();
 
-	SetRenderTechnique(ERenderTechnique::PhotonBeams);
+	//SetRenderTechnique(ERenderTechnique::PhotonBeams);
 	//SetRenderTechnique(ERenderTechnique::PathTracing);
-	//SetRenderTechnique(ERenderTechnique::PhotonMapping);
+	SetRenderTechnique(ERenderTechnique::PhotonMapping);
 
 	LoadCloudFile("cloud-1940.xyz");
+	UpdateCloudData();
 
 	RenderLoop();
 

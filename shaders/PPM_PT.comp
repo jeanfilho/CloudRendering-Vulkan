@@ -1,6 +1,6 @@
 #version 450
 
-layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 //---------------------------------------------------------
 // Structs
 //---------------------------------------------------------
@@ -23,6 +23,7 @@ struct Photon
 //---------------------------------------------------------
 // Constants
 //---------------------------------------------------------
+const uint ELEMENTS_PER_CELL = 32;
 const vec4 SUNLIGHT_COLOR = vec4(1.0f);
 const float PI = 3.14159265359;
 const float INV_4Pi = 1.0f/(4.0f * PI);
@@ -299,7 +300,7 @@ void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
 //---------------------------------------------------------
 // Photon Map Functions
 //---------------------------------------------------------
-vec4 currentColor = SUNLIGHT_COLOR * parameters.lightIntensity;
+vec4 currentColor = vec4(0);
 void depositPhoton(in const vec3 pos, in const vec3 dir)
 {
     vec3 normPos = (pos - photonMapProperties.bounds[0].xyz)/ photonMapProperties.voxelSize;
@@ -313,8 +314,10 @@ void depositPhoton(in const vec3 pos, in const vec3 dir)
     photon.phi = SphericalPhi(dir);
     
     uint offset = atomicAdd(collisions[idx].x, 1);
-    if(offset < 32)
-        photons[idx * 32 + offset] = photon;
+    if(offset < ELEMENTS_PER_CELL)
+    {
+        photons[idx * ELEMENTS_PER_CELL + offset] = photon;
+    }
 }
 
 // Provided by Ludwig Leonart - https://github.com/lleonart1984
@@ -324,44 +327,65 @@ void generateSunRay(out Ray ray, out float pdf)
     vec4 boundsDiff = cloudProperties.bounds[1] - cloudProperties.bounds[0];
     vec3 areas = boundsDiff.zxy * boundsDiff.yzx * abs(photonMapProperties.lightDirection.xyz);
     float totalArea = dot(areas, vec3(1));
-    float selectedSide = generateRandomNumber() * totalArea;
-    vec3 c1 =  vec3(photonMapProperties.lightDirection.x < 0 ? cloudProperties.bounds[0].x : cloudProperties.bounds[1].x,
-                    photonMapProperties.lightDirection.y < 0 ? cloudProperties.bounds[0].y : cloudProperties.bounds[1].y,
-                    photonMapProperties.lightDirection.z < 0 ? cloudProperties.bounds[0].z : cloudProperties.bounds[1].z);
-    vec3 c2 = c1;
-    if (selectedSide < areas.x) // choose yz plane
-    {
-        c1.yz = cloudProperties.bounds[0].yz;
-        c2.yz = cloudProperties.bounds[1].yz;
-        ray.pos = mix(c1, c2, vec3(0, generateRandomNumber(), generateRandomNumber()));
-    }
-    if (selectedSide < areas.x + areas.y) // choose xz plane
-    {
-        c1.xz = cloudProperties.bounds[0].xz;
-        c2.xz = cloudProperties.bounds[1].xz;
-        ray.pos = mix(c1, c2, vec3(generateRandomNumber(), 0, generateRandomNumber()));
-    }
-    else // choose xy plane
-    {
-        c1.xy = cloudProperties.bounds[0].xy;
-        c2.xy = cloudProperties.bounds[1].xy;
-        ray.pos = mix(c1, c2, vec3(generateRandomNumber(), generateRandomNumber(), 0));
-    }
+    // float selectedSide = generateRandomNumber() * totalArea;
+    // vec3 c1 =  vec3(photonMapProperties.lightDirection.x < 0 ? cloudProperties.bounds[1].x : cloudProperties.bounds[0].x,
+    //                 photonMapProperties.lightDirection.y < 0 ? cloudProperties.bounds[1].y : cloudProperties.bounds[0].y,
+    //                 photonMapProperties.lightDirection.z < 0 ? cloudProperties.bounds[1].z : cloudProperties.bounds[0].z);
+    // vec3 c2 = c1;
+    // if (selectedSide < areas.x) // choose yz plane
+    // {
+    //     c1.yz = cloudProperties.bounds[0].yz;
+    //     c2.yz = cloudProperties.bounds[1].yz;
+    //     ray.pos = mix(c1, c2, vec3(0, generateRandomNumber(), generateRandomNumber()));
+    // }
+    // if (selectedSide < areas.x + areas.y) // choose xz plane
+    // {
+    //     c1.xz = cloudProperties.bounds[0].xz;
+    //     c2.xz = cloudProperties.bounds[1].xz;
+    //     ray.pos = mix(c1, c2, vec3(generateRandomNumber(), 0, generateRandomNumber()));
+    // }
+    // else // choose xy plane
+    // {
+    //     c1.xy = cloudProperties.bounds[0].xy;
+    //     c2.xy = cloudProperties.bounds[1].xy;
+    //     ray.pos = mix(c1, c2, vec3(generateRandomNumber(), generateRandomNumber(), 0));
+    // }
 
     pdf = 1.0f / totalArea;
+
     ray.dir = photonMapProperties.lightDirection.xyz;
+    ray.pos = cloudProperties.bounds[0].xyz + vec3(boundsDiff.x * generateRandomNumber(), boundsDiff.y * generateRandomNumber(), boundsDiff.z * generateRandomNumber());
+
+    float tmax, tmin;
+    intersectCloud(ray, tmax, tmin);
+    ray.pos = ray.pos + ray.dir * tmin;
 }
 
 void generateAmbientRay(out Ray ray, out float pdf)
 {
-    vec4 boundsDiff = cloudProperties.bounds[1] - cloudProperties.bounds[0];
+    while(true)
+    {
+        ray.dir = vec3(generateRandomNumber() * 2.0f - 1.0f, generateRandomNumber() * 2.0f - 1.0f, generateRandomNumber() * 2.0f - 1.0f);
+        if (length(ray.dir) < 1)
+        {
+            normalize(ray.dir);
+            break;
+        }
+    }
 
-    ray.dir = dirFromPolar(generateRandomNumber() * 2.0f * PI, generateRandomNumber() * PI);
-    ray.pos = vec3(generateRandomNumber() * boundsDiff.x, generateRandomNumber() * boundsDiff.y, generateRandomNumber() * boundsDiff.z) + cloudProperties.bounds[0].xyz;
-    pdf = INV_4Pi * (4.0f / dot(boundsDiff.xyz, boundsDiff.xyz)); //4*PI*r² - radius is considered to be length(boundDiff/2)
+    // Calculate ray position on projected area
+    vec3 boundsDiff = (cloudProperties.bounds[1] - cloudProperties.bounds[0]).xyz;
+    vec3 areas = boundsDiff.zxy * boundsDiff.yzx * abs(ray.dir);
+    float totalArea = dot(areas, vec3(1));
+
+    ray.pos = cloudProperties.bounds[0].xyz + vec3(boundsDiff.x * generateRandomNumber(), boundsDiff.y * generateRandomNumber(), boundsDiff.z * generateRandomNumber());
+    //ray.pos = cloudProperties.bounds[0].xyz + boundsDiff/2;
+
+    //pdf = 1.0f / (4 * PI * totalArea);
+    pdf = INV_4Pi / totalArea; //4*PI*r² - radius is considered to be 1
 
     float tmax, tmin;
-    intersectCloud(ray, tmax, tmin);
+    if(intersectCloud(ray, tmax, tmin))
     ray.pos = ray.pos + ray.dir * tmin;
 }
 
@@ -442,20 +466,21 @@ void main()
 
     // Get ray direction and volume entry point
     Ray ray = { vec3(0), vec3(0) };
-    vec3 boundsDiff = (photonMapProperties.bounds[1] - photonMapProperties.bounds[0]).xyz;
-
-    float pdf;
-    if(generateRandomNumber() < .5f)
+    float pdf = 0;
+    float prob = 0.5f; 
+    if(generateRandomNumber() < prob)
     {
         generateSunRay(ray, pdf);
         currentColor = SUNLIGHT_COLOR * parameters.lightIntensity / (pdf * emittedPhotons);
+        currentColor /= prob;
     }
     else
     {
         generateAmbientRay(ray, pdf);
-        currentColor = sampleBackground(-ray.dir) / (pdf * emittedPhotons) ;
+        currentColor = sampleBackground(-ray.dir) / (pdf * emittedPhotons);
+        currentColor /= (1.0f - prob);
     }
-    currentColor *= 2;
+    currentColor *= .6f; // accounting for the doubling of total photons, due to russian roulette
 
     // Photon tracer loop - keep scattering and depositing photons until absorbed or left the volume
     bool firstScatter = true;
