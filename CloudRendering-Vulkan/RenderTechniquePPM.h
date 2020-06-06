@@ -56,6 +56,6 @@ private:
 	std::vector<VulkanImageView*> m_imageViews;
 
 	const float m_initialRadius = 0;
-	const float m_alpha = .99f;
+	const float m_alpha = .8f;
 	const uint32_t elementsPerCell = 32;
 };

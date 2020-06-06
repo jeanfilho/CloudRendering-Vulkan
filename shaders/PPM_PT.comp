@@ -368,7 +368,7 @@ void generateAmbientRay(out Ray ray, out float pdf)
         ray.dir = vec3(generateRandomNumber() * 2.0f - 1.0f, generateRandomNumber() * 2.0f - 1.0f, generateRandomNumber() * 2.0f - 1.0f);
         if (length(ray.dir) < 1)
         {
-            normalize(ray.dir);
+            ray.dir = normalize(ray.dir);
             break;
         }
     }
@@ -385,7 +385,7 @@ void generateAmbientRay(out Ray ray, out float pdf)
     pdf = INV_4Pi / totalArea; //4*PI*r² - radius is considered to be 1
 
     float tmax, tmin;
-    if(intersectCloud(ray, tmax, tmin))
+    intersectCloud(ray, tmax, tmin);
     ray.pos = ray.pos + ray.dir * tmin;
 }
 
@@ -465,6 +465,8 @@ void main()
     uint emittedPhotons = gl_WorkGroupSize.y * gl_NumWorkGroups.y * gl_WorkGroupSize.x * gl_NumWorkGroups.x;
 
     // Get ray direction and volume entry point
+    bool firstScatter = true;
+    vec3 newDir = vec3(0);
     Ray ray = { vec3(0), vec3(0) };
     float pdf = 0;
     float prob = 0.5f; 
@@ -477,14 +479,12 @@ void main()
     else
     {
         generateAmbientRay(ray, pdf);
-        currentColor = sampleBackground(-ray.dir) / (pdf * emittedPhotons);
+        currentColor = sampleBackground(-ray.dir) / (pdf * emittedPhotons) * .5f; // Manual adjustment
         currentColor /= (1.0f - prob);
     }
-    currentColor *= .6f; // accounting for the doubling of total photons, due to russian roulette
+    currentColor *= .5f; // accounting for the doubling of total photons, due to russian roulette
 
     // Photon tracer loop - keep scattering and depositing photons until absorbed or left the volume
-    bool firstScatter = true;
-    vec3 newDir = vec3(0);
     while(interactWithMedium(ray, firstScatter))
     {
         // Get new scatter direction

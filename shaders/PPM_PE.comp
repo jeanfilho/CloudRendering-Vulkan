@@ -325,7 +325,6 @@ vec4 samplePhotonMap(in const vec3 pos, in const vec3 dir, in const float scatte
     vec3 distVector = vec3(0);
     vec3 photonDir = vec3(0);
     vec4 accumulatedRadiance = vec4(0);
-    vec3 testPos = pos + photonMapProperties.voxelSize;
 
     float sqrRadius = pushConstants.pmRadius * pushConstants.pmRadius;
     for(int z = zMin; z <= zMax; z++)
@@ -350,12 +349,92 @@ vec4 samplePhotonMap(in const vec3 pos, in const vec3 dir, in const float scatte
     }
 
     if(average(accumulatedRadiance) <= 0)
+    {
         return vec4(0);
+    }
+
+    // Sample 6 directions to estimate the avg density
+    float avgDensity = 0;
+    float sampleDistance = 5 * generateRandomNumber();
+    avgDensity += sampleCloud(pos - vec3(sampleDistance, 0, 0));
+    avgDensity += sampleCloud(pos + vec3(sampleDistance, 0, 0));
+    avgDensity += sampleCloud(pos - vec3(0, sampleDistance, 0));
+    avgDensity += sampleCloud(pos + vec3(0, sampleDistance, 0));
+    avgDensity += sampleCloud(pos - vec3(0, 0, sampleDistance));
+    avgDensity += sampleCloud(pos + vec3(0, 0, sampleDistance));
+    avgDensity /= 6;
+    avgDensity *= cloudProperties.densityScaling / cloudProperties.baseScaling;
+    //if(avgDensity <= 0.01) avgDensity = scatter;
+
+    //avgDensity = (avgDensity + scatter) / 2;
 
     // Divide by sphere volume
-    accumulatedRadiance /= PI4_3 * pushConstants.pmRadius * sqrRadius * scatter;
+    accumulatedRadiance /= (PI4_3 * pushConstants.pmRadius * sqrRadius * scatter);
 
     return accumulatedRadiance;
+}
+
+void generateAmbientRay(out vec3 rayDir, out float pdf)
+{
+    while(true)
+    {
+        rayDir = vec3(generateRandomNumber() * 2.0f - 1.0f, generateRandomNumber() * 2.0f - 1.0f, generateRandomNumber() * 2.0f - 1.0f);
+        if (length(rayDir) < 1)
+        {
+            rayDir = normalize(rayDir);
+            break;
+        }
+    }
+    pdf = INV_4Pi; //4*PI*r² - radius is considered to be 1
+}
+
+// https://www.shadertoy.com/view/lldGRM
+void createOrthonormalBasis(in const vec3 n, out vec3 xp, out vec3 yp)
+{
+  float sz = n.z >= 0.0 ? 1.0 : -1.0;
+  float a  =  n.y/(1.0+abs(n.z));
+  float b  =  n.y*a;
+  float c  = -n.x*a;
+    
+  xp = vec3(n.z+sz*b, sz*c, -n.x);
+  yp = vec3(c, 1.0-b, -sz*n.y);
+}
+
+// Scatter ray and evaluate radiance
+void scatterRay(in const vec3 incomingDirection, out vec3 sampleDirection)
+{
+    if(parameters.isotropic)
+    {
+        float xi = generateRandomNumber();
+        sampleDirection.z = xi * 2.0 - 1.0; // cosTheta
+        float sinTheta = 1.0 - sampleDirection.z * sampleDirection.z; // actually square of sinTheta
+        if (sinTheta > 0.0)
+        {
+            sinTheta = sqrt(max(0,sinTheta));
+            xi = generateRandomNumber();
+            float phi = xi * 2.0 * PI;
+            sampleDirection.x = sinTheta * cos(phi);
+            sampleDirection.y = sinTheta * sin(phi);
+        }
+        else
+        {
+            sampleDirection.x = sampleDirection.y = 0.0;
+        }
+    }
+    else
+    {
+        float phi = generateRandomNumber() * 2 * PI;
+        float cosTheta = invertCDF(generateRandomNumber());
+        float sinTheta = sqrt(max(0, 1.0f - cosTheta * cosTheta));
+        vec3 t0, t1;
+
+        createOrthonormalBasis(incomingDirection, t0, t1);
+        
+        sampleDirection =
+            sinTheta * cos(phi) * t0 +
+            sinTheta * sin(phi) * t1 +
+            cosTheta * incomingDirection;
+    }
 }
 
 //---------------------------------------------------------
@@ -386,6 +465,7 @@ void main()
 
         // Radiance estimate
         vec4 directRadiance = vec4(0);
+        vec4 ambientRadiance = vec4(0);
         vec4 indirectRadiance = vec4(0);
         vec4 radiance = vec4(0);
 
@@ -395,6 +475,7 @@ void main()
 
         // Cloud parameters
         vec3 lightRayDir = vec3(0);
+        vec3 ambientRayDir = vec3(0);
         float albedo = 0;
         float scatter = 0;
         float extinction = 0;
@@ -419,6 +500,32 @@ void main()
             pdf = samplePhase(-ray.dir, lightRayDir);
             accumulatedDensity = sampleShadowVolume(ray.pos);
             directRadiance = SUNLIGHT_COLOR * parameters.lightIntensity * pdf * accumulatedDensity;
+
+            // Calculate Ambient light scatter
+            ambientRadiance = vec4(0);
+            //generateAmbientRay(ambientRayDir, pdf);
+            scatterRay(ray.dir, ambientRayDir);
+
+            accumulatedDensity = 0;
+            float accumulatedDistance = 0;
+            uint samples = 0;
+            vec3 pos = ray.pos;
+            float sampleDist = 100;
+            ambientRadiance = sampleBackground(ambientRayDir);
+            while(isInCloud(pos))
+            {
+                pos += ambientRayDir * sampleDist;
+                accumulatedDensity += sampleCloud(pos);
+                accumulatedDistance += sampleDist;
+                samples++;
+            }
+            accumulatedDensity *= cloudProperties.densityScaling / cloudProperties.baseScaling;
+            ambientRadiance *= exp( -accumulatedDistance * accumulatedDensity / (samples));
+
+            if(ambientRadiance.x > 0)
+            {
+                directRadiance += ambientRadiance;
+            }
        
             // Calculate indirect light scatter
             indirectRadiance = albedo * samplePhotonMap(ray.pos, -ray.dir, scatter);
