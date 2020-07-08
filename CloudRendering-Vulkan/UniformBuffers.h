@@ -94,7 +94,7 @@ public:
 	{
 		if (value > 1 || value < -1) return;
 
-		phaseG = value;
+		phaseG = glm::clamp(value, -0.95f, 0.95f);
 
 		isotropic = (std::abs(phaseG) < 0.0001f);
 		if (!isotropic)

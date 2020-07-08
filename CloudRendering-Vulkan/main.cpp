@@ -305,7 +305,7 @@ void UpdateShadowVolume()
 	g_photonBeamsTechnique->UpdateDescriptorSets();
 
 	g_pushConstants.frameCount = 1;
-	g_renderStartTime = g_pushConstants.time;
+	g_renderStartTime = glfwGetTime();
 }
 
 void UpdateCloudData()
@@ -520,7 +520,7 @@ void Clear()
 	std::cout << "OK" << std::endl;
 }
 
-void DrawUI()
+void UpdateUI()
 {
 	ImGui_ImplVulkan_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
@@ -553,7 +553,7 @@ void DrawUI()
 	ImGui::Begin("Settings");
 	{
 		ImGui::Text("Parameters");
-		ImGui::SliderFloat("Henyey-Greenstein G ", &g_UIPhaseG, -1, 1);
+		ImGui::SliderFloat("Henyey-Greenstein G ", &g_UIPhaseG, -0.95f, 0.95f);
 
 		ImGui::Separator();
 
@@ -643,6 +643,7 @@ void DrawFrame()
 	g_imagesInFlight[imageIndex] = g_inFlightFences[g_currentFrame].GetFence();
 
 	// Record commands
+
 	RecordComputeCommands(imageIndex);
 	RecordImGUICommands(imageIndex);
 
@@ -695,10 +696,7 @@ void RenderLoop()
 
 		if (!glfwGetWindowAttrib(g_window, GLFW_ICONIFIED))
 		{
-			// DEBUG TEST - causes crash at random - no clue why :(
-			// g_photonBeamsTechnique->GetDebug();
-
-			DrawUI();
+			UpdateUI();
 			DrawFrame();
 			g_pushConstants.frameCount++;
 			g_framesInSecond++;

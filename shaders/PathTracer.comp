@@ -392,18 +392,18 @@ void main()
         Ray currentRay = ray;
 
         // Path tracer loop
+        lightRay.dir = shadowVolumeProperties.lightDirection.xyz;            
         while(true)
         {
             // Move along current ray direction and check if ray is still in the cloud
             if(!findScatterPoint(ray))
             {  
-                result += sampleBackground(ray.dir);    
+                result += sampleBackground(ray.dir);
                 break;
             }
 
             // Sample pdf between ray and light directions
-            lightRay.pos = ray.pos ;
-            lightRay.dir = shadowVolumeProperties.lightDirection.xyz;            
+            lightRay.pos = ray.pos;
             pdf = samplePhase(-ray.dir, lightRay.dir);
 
             // Sample shadow volume and add direct light

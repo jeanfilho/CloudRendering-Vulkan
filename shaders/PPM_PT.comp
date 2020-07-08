@@ -363,22 +363,17 @@ void generateSunRay(out Ray ray, out float pdf)
 
 void generateAmbientRay(out Ray ray, out float pdf)
 {
-    while(true)
-    {
-        ray.dir = vec3(generateRandomNumber() * 2.0f - 1.0f, generateRandomNumber() * 2.0f - 1.0f, generateRandomNumber() * 2.0f - 1.0f);
-        if (length(ray.dir) < 1)
-        {
-            ray.dir = normalize(ray.dir);
-            break;
-        }
-    }
+    // Calculate ray direction
+    float theta = 2 * PI * generateRandomNumber();
+    float phi = acos(1 - 2 * generateRandomNumber());
+    ray.dir = normalize(dirFromPolar(theta, phi));
 
     // Calculate ray position on projected area
     vec3 boundsDiff = (cloudProperties.bounds[1] - cloudProperties.bounds[0]).xyz;
     vec3 areas = boundsDiff.zxy * boundsDiff.yzx * abs(ray.dir);
     float totalArea = dot(areas, vec3(1));
 
-    ray.pos = cloudProperties.bounds[0].xyz + vec3(boundsDiff.x * generateRandomNumber(), boundsDiff.y * generateRandomNumber(), boundsDiff.z * generateRandomNumber());
+    ray.pos = cloudProperties.bounds[0].xyz + vec3(boundsDiff.x * generateRandomNumber(), boundsDiff.y * generateRandomNumber(), boundsDiff.z * generateRandomNumber()) + .1f;
     //ray.pos = cloudProperties.bounds[0].xyz + boundsDiff/2;
 
     //pdf = 1.0f / (4 * PI * totalArea);
