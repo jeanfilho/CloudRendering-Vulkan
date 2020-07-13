@@ -477,7 +477,7 @@ void main()
         currentColor = sampleBackground(-ray.dir) / (pdf * emittedPhotons) * .5f; // Manual adjustment
         currentColor /= (1.0f - prob);
     }
-    currentColor *= .5f; // accounting for the doubling of total photons, due to russian roulette
+    currentColor *= .5f; // Manual adjustment
 
     // Photon tracer loop - keep scattering and depositing photons until absorbed or left the volume
     while(interactWithMedium(ray, firstScatter))
