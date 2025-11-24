@@ -7,7 +7,8 @@ VulkanSampler::VulkanSampler(VulkanDevice* device)
 {
 	m_device = device;
 
-	vkCreateSampler(m_device->GetDevice(), &initializers::SamplerCreateInfo(), nullptr, &m_sampler);
+    VkSamplerCreateInfo samplerInfo = initializers::SamplerCreateInfo();
+	vkCreateSampler(m_device->GetDevice(), &samplerInfo, nullptr, &m_sampler);
 }
 
 VulkanSampler::~VulkanSampler()

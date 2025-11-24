@@ -82,7 +82,7 @@ ImGUILayer* g_imguiLayer = nullptr;
 std::vector<VulkanSemaphore> g_imageAvailableSemaphores;
 std::vector<VulkanSemaphore> g_renderFinishedSemaphores;
 std::vector<VulkanFence> g_inFlightFences;
-std::vector<VkFence> g_imagesInFlight;
+std::vector<VulkanFence> g_imagesInFlight;
 uint32_t g_currentFrame = 0;
 
 bool g_framebufferResized = false;
@@ -198,7 +198,8 @@ void RecordComputeCommands(uint32_t imageIndex)
 	vkResetCommandBuffer(commandBuffer, 0);
 
 	// Start recording commands
-	vkBeginCommandBuffer(commandBuffer, &initializers::CommandBufferBeginInfo());
+    VkCommandBufferBeginInfo beginInfo = initializers::CommandBufferBeginInfo();
+	vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
 	// Record technique commands
 	g_currentTechnique->RecordDrawCommands(commandBuffer, g_currentFrame, imageIndex);
@@ -216,7 +217,8 @@ void RecordImGUICommands(uint32_t imageIndex)
 	VkImage swapchainImage = g_swapchain->GetSwapchainImages()[imageIndex];
 
 	vkResetCommandBuffer(commandBuffer, 0);
-	vkBeginCommandBuffer(commandBuffer, &initializers::CommandBufferBeginInfo());
+    VkCommandBufferBeginInfo beginInfo = initializers::CommandBufferBeginInfo();
+	vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
 	VkClearValue clearValue{};
 	clearValue.color = VkClearColorValue();
@@ -634,13 +636,13 @@ void DrawFrame()
 	ValidCheck(vkAcquireNextImageKHR(g_device->GetDevice(), g_swapchain->GetSwapchain(), UINT64_MAX, g_imageAvailableSemaphores[g_currentFrame].GetSemaphore(), VK_NULL_HANDLE, &imageIndex));
 
 	// Check if a previous frame is using this image (i.e. there is its fence to wait on)
-	if (g_imagesInFlight[imageIndex] != VK_NULL_HANDLE)
+	if (g_imagesInFlight[imageIndex].GetFence() != VK_NULL_HANDLE)
 	{
-		vkWaitForFences(g_device->GetDevice(), 1, &g_imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
+		vkWaitForFences(g_device->GetDevice(), 1, &g_imagesInFlight[imageIndex].GetFence(), VK_TRUE, UINT64_MAX);
 	}
 
 	// Mark the image as now being in use by this frame
-	g_imagesInFlight[imageIndex] = g_inFlightFences[g_currentFrame].GetFence();
+	g_imagesInFlight[imageIndex].GetFence() = g_inFlightFences[g_currentFrame].GetFence();
 
 	// Record commands
 

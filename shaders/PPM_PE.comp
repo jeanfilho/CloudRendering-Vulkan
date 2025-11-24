@@ -140,7 +140,7 @@ layout (push_constant) uniform PushConstants
 vec4 sampleBackground(in vec3 dir)
 {
     float dist = dir.y;
-    lowp vec4 col = BG_COLORS[0];
+    vec4 col = BG_COLORS[0];
     for (int i=1; i < 5; ++i)
     {
         col = mix(col, BG_COLORS[i], smoothstep(BG_DISTS[i-1], BG_DISTS[i], dist));
