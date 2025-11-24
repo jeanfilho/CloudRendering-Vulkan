@@ -425,7 +425,7 @@ vec4 traverseTree(const Ray ray)
         vec3 sizeL = (nodes[childL].bounds[1] - nodes[childL].bounds[0]).xyz;
         bool intersectL = intersectBox(ray.pos, ray.dir, centerL, sizeL).x != FLT_MAX;
 
-        uint childR = nodes[currentNode].left;
+        uint childR = nodes[currentNode].right;
         vec3 centerR = (nodes[childR].bounds[0] + nodes[childR].bounds[1]).xyz / 2.0f;
         vec3 sizeR = (nodes[childR].bounds[1] - nodes[childR].bounds[0]).xyz;
         bool intersectR = intersectBox(ray.pos, ray.dir, centerR, sizeR).x != FLT_MAX;
