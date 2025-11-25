@@ -33,6 +33,7 @@ RenderTechniquePT::RenderTechniquePT(VulkanDevice* device, VulkanSwapchain* swap
 		// Binding 6: Shadow volume properties (read)
 		initializers::DescriptorSetLayoutBinding(6, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
 	};
+    AddDescriptorTypesCount(pathTracerSetLayoutBindings);
 	m_descriptorSetLayout = new VulkanDescriptorSetLayout(m_device, pathTracerSetLayoutBindings);
 
 	// Path tracer pipeline;
@@ -100,37 +101,26 @@ void RenderTechniquePT::QueueUpdateCloudDataSampler(VkDescriptorImageInfo& cloud
 void RenderTechniquePT::QueueUpdateCameraProperties(VkDescriptorBufferInfo& cameraBufferInfo, unsigned int frameNr)
 {
 	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &cameraBufferInfo));
-
 }
 
 void RenderTechniquePT::QueueUpdateParameters(VkDescriptorBufferInfo& parametersBufferInfo, unsigned int frameNr)
 {
 	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &parametersBufferInfo));
-
 }
 
 void RenderTechniquePT::QueueUpdateShadowVolume(VkDescriptorBufferInfo& shadowVolumeBufferInfo, unsigned int frameNr)
 {
 	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6, &shadowVolumeBufferInfo));
-
 }
 
 void RenderTechniquePT::QueueUpdateShadowVolumeSampler(VkDescriptorImageInfo& shadowVolumeImageInfo, unsigned int frameNr)
 {
 	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &shadowVolumeImageInfo));
-
 }
 
 uint32_t RenderTechniquePT::GetRequiredSetCount() const
 {
 	return 1;
-}
-
-void RenderTechniquePT::GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& poolSizes) const
-{
-	poolSizes.push_back(initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3));		// Cloud Properties + Camera Properties + Parameters
-	poolSizes.push_back(initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1));// Cloud grid sampler3D * Frames in flight
-	poolSizes.push_back(initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1));			// Render image
 }
 
 void RenderTechniquePT::RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex)

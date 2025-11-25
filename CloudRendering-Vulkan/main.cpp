@@ -23,7 +23,6 @@
 #include "Tests.h"
 #include "ImGUILayer.h"
 
-
 //--------------------------------------------------------------
 // Shader Resources
 //--------------------------------------------------------------
@@ -82,17 +81,19 @@ ImGUILayer* g_imguiLayer = nullptr;
 std::vector<VulkanSemaphore> g_imageAvailableSemaphores;
 std::vector<VulkanSemaphore> g_renderFinishedSemaphores;
 std::vector<VulkanFence> g_inFlightFences;
-std::vector<VulkanFence> g_imagesInFlight;
+std::vector<VkFence> g_imagesInFlight; //Vulkan type needed for function call in rendering loop
 uint32_t g_currentFrame = 0;
 
 bool g_framebufferResized = false;
 
 GLFWwindow* g_window;
-const int MAX_FRAMES_IN_FLIGHT = 1;
 
 double g_renderStartTime = 0;
 double g_previousTime = 0;
 unsigned int g_framesInSecond = 0;
+
+constexpr int MAX_FRAMES_IN_FLIGHT = 2;
+const char* CLOUD_FILE_PATH = "../models/mycloud.xyz";
 
 //----------------------------------------------------------------------
 // UI
@@ -163,18 +164,19 @@ bool LoadCloudFile(const std::string filename)
 {
 	std::cout << "Loading cloud file...";
 
-	if (g_cloudData)
-	{
-		delete g_cloudData;
-		g_cloudData = nullptr;
-	}
 
-	g_cloudData = Grid3D<float>::Load("../models/" + filename);
-	if (!g_cloudData)
+	Grid3D<float>* cloudData = Grid3D<float>::Load("../models/" + filename);
+	if (!cloudData)
 	{
 		std::cout << " ERROR: Failed to load file \"" + filename + "\" in models folder" << std::endl;
 		return false;
 	}
+
+	if (g_cloudData)
+	{
+		delete g_cloudData;
+	}
+	g_cloudData = cloudData;
 
 	g_UICurrentCloudFile = filename;
 
@@ -636,13 +638,13 @@ void DrawFrame()
 	ValidCheck(vkAcquireNextImageKHR(g_device->GetDevice(), g_swapchain->GetSwapchain(), UINT64_MAX, g_imageAvailableSemaphores[g_currentFrame].GetSemaphore(), VK_NULL_HANDLE, &imageIndex));
 
 	// Check if a previous frame is using this image (i.e. there is its fence to wait on)
-	if (g_imagesInFlight[imageIndex].GetFence() != VK_NULL_HANDLE)
+	if (g_imagesInFlight[imageIndex] != VK_NULL_HANDLE)
 	{
-		vkWaitForFences(g_device->GetDevice(), 1, &g_imagesInFlight[imageIndex].GetFence(), VK_TRUE, UINT64_MAX);
+		vkWaitForFences(g_device->GetDevice(), 1, &g_imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
 	}
 
 	// Mark the image as now being in use by this frame
-	g_imagesInFlight[imageIndex].GetFence() = g_inFlightFences[g_currentFrame].GetFence();
+	g_imagesInFlight[imageIndex] = g_inFlightFences[g_currentFrame].GetFence();
 
 	// Record commands
 
@@ -795,23 +797,21 @@ bool InitializeVulkan()
 	g_photonBeamsTechnique = new RenderTechniquePPB(g_device, &g_pushConstants, &g_cameraProperties, 200);
 
 	// Compute Descriptor Pool
-	std::vector<VkDescriptorPoolSize> poolSizes =
-	{
-		initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1),			// Shadow Volume Properties
-		initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1),	// Shadow Volume Cloud grid sampler3D
-		initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1),			// Shadow Volume write image
-	};
+	std::vector<VkDescriptorPoolSize> poolSizes;
 	for (unsigned int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		g_pathTracingTechnique->GetDescriptorPoolSizes(poolSizes);
+        g_photonMappingTechnique->GetDescriptorPoolSizes(poolSizes);
+        g_photonBeamsTechnique->GetDescriptorPoolSizes(poolSizes);		
 	}
+    g_shadowVolumeTechnique->GetDescriptorPoolSizes(poolSizes);
 
 	uint32_t requiredSets = g_shadowVolumeTechnique->GetRequiredSetCount() +
 		(g_pathTracingTechnique->GetRequiredSetCount() + g_photonMappingTechnique->GetRequiredSetCount() + g_photonBeamsTechnique->GetRequiredSetCount()) * static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 	g_computeDescriptorPool = new VulkanDescriptorPool(g_device, poolSizes, requiredSets);
 
-	g_computeDescriptorPool->AllocateSets(g_photonMappingTechnique, MAX_FRAMES_IN_FLIGHT);
 	g_computeDescriptorPool->AllocateSets(g_pathTracingTechnique, MAX_FRAMES_IN_FLIGHT);
+	g_computeDescriptorPool->AllocateSets(g_photonMappingTechnique, MAX_FRAMES_IN_FLIGHT);
 	g_computeDescriptorPool->AllocateSets(g_photonBeamsTechnique, MAX_FRAMES_IN_FLIGHT);
 	g_computeDescriptorPool->AllocateSets(g_shadowVolumeTechnique, 1);
 
@@ -896,15 +896,8 @@ bool InitializeGLFW()
 	return true;
 }
 
-int main()
+void StartSimulation(ERenderTechnique technique)
 {
-	// Seed random
-	std::srand(0);
-
-#ifdef _DEBUG
-	//tests::RunTests();
-#endif
-
 	// Create default data
 	g_cloudData = new Grid3D<float>(100, 100, 100, .01, .01, .01);
 	SetCloudProperties(g_cloudData);
@@ -914,14 +907,20 @@ int main()
 	InitializeGLFW();
 	InitializeVulkan();
 
-	//SetRenderTechnique(ERenderTechnique::PhotonBeams);
-	//SetRenderTechnique(ERenderTechnique::PathTracing);
-	SetRenderTechnique(ERenderTechnique::PhotonMapping);
+	SetRenderTechnique(technique);
 
-	LoadCloudFile("cloud-1940.xyz");
+	LoadCloudFile(CLOUD_FILE_PATH);
 	UpdateCloudData();
 
 	RenderLoop();
+}
+
+int main()
+{
+	// Seed random
+	std::srand(0);
+
+    StartSimulation(ERenderTechnique::PathTracing);
 
 	Clear();
 

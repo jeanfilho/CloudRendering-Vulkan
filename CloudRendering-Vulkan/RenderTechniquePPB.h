@@ -20,7 +20,6 @@ public:
 	virtual void ClearFrameReferences() override;
 
 	virtual uint32_t GetRequiredSetCount() const override;
-	virtual void GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& outPoolSizes) const override;
 
 	virtual void QueueUpdateCloudData(VkDescriptorBufferInfo& cloudBufferInfo, unsigned int frameNr) override;
 	virtual void QueueUpdateCloudDataSampler(VkDescriptorImageInfo& cloudImageInfo, unsigned int frameNr) override;
@@ -46,17 +45,6 @@ private:
 		uint32_t workGroupCount = 0;
 
 	} m_lbvhPushConstants;
-
-	/*const enum EResourceOffsets
-	{
-		Tracing = 0,
-		LocalSort = Tracing + 6,
-		PrefixSum = LocalSort + 2,
-		GlobalSort = PrefixSum + 2,
-		Hierarchy = GlobalSort + 3,
-		Fitting = Hierarchy + 2,
-		Estimate = Fitting + 2
-	};*/
 
 	const enum ESetIndex
 	{

@@ -34,6 +34,7 @@ RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* sw
 		// Binding 5: Photon collision map (read and write)
 		initializers::DescriptorSetLayoutBinding(5, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
 	};
+    AddDescriptorTypesCount(ptSetLayoutBindings);
 	m_ptDescriptorSetLayout = new VulkanDescriptorSetLayout(m_device, ptSetLayoutBindings);
 
 	// Photon tracer pipeline;
@@ -78,9 +79,10 @@ RenderTechniquePPM::RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* sw
 		// Binding 9: Shadow Volume Properties
 		initializers::DescriptorSetLayoutBinding(9, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
 	};
+    AddDescriptorTypesCount(peSetLayoutBindings);
 	m_peDescriptorSetLayout = new VulkanDescriptorSetLayout(m_device, peSetLayoutBindings);
 
-	// Path tracer pipeline;
+	// Photon estimate pipeline;
 	std::vector<VkPushConstantRange> pePushConstantRanges
 	{
 		initializers::PushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants))
@@ -135,20 +137,20 @@ void RenderTechniquePPM::AllocateResources(VulkanBuffer* photonMapPropertiesBuff
 	m_photonMap = new VulkanBuffer(m_device, nullptr, sizeof(Photon) * elementsPerCell, flags, bufferSize);
 	m_collisionMap = new VulkanBuffer(m_device, nullptr, sizeof(glm::uvec4), flags, bufferSize);
 
-	std::vector<VkWriteDescriptorSet> writes;
-	uint32_t setSize = static_cast<uint32_t>(m_descriptorSets.size() / 2);
-
 	auto photonMapInfo = initializers::DescriptorBufferInfo(m_photonMap->GetBuffer(), 0, VK_WHOLE_SIZE);
 	auto collisionMapInfo = initializers::DescriptorBufferInfo(m_collisionMap->GetBuffer(), 0, VK_WHOLE_SIZE);
 	auto photonMapPropertiesInfo = initializers::DescriptorBufferInfo(photonMapPropertiesBuffer->GetBuffer(), 0, photonMapPropertiesBuffer->GetSize());
-	for (size_t i = 0; i < setSize; i++)
+
+	std::vector<VkWriteDescriptorSet> writes;
+	uint32_t frameCount = static_cast<uint32_t>(m_descriptorSets.size() / ESetIndex_SetCount);
+	for (size_t i = 0; i < frameCount; i++)
 	{
-		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, &photonMapInfo));
-		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5, &collisionMapInfo));
-		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &photonMapPropertiesInfo));
-		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i + setSize], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2, &photonMapInfo));
-		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i + setSize], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5, &photonMapPropertiesInfo));
-		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i + setSize], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6, &collisionMapInfo));
+		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing + i * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, &photonMapInfo));
+		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing + i * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5, &collisionMapInfo));
+		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing + i * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &photonMapPropertiesInfo));
+		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + i * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2, &photonMapInfo));
+		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + i * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5, &photonMapPropertiesInfo));
+		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + i * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6, &collisionMapInfo));
 	};
 	vkUpdateDescriptorSets(m_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
@@ -167,11 +169,11 @@ void RenderTechniquePPM::SetFrameReferences(std::vector<VulkanImage*>& frameImag
 
 	// Update compute bindings for output image
 	std::vector<VkWriteDescriptorSet> writes;
-	uint32_t setSize = static_cast<uint32_t>(m_descriptorSets.size() / 2);
-	for (size_t i = 0; i < setSize; i++)
+	uint32_t frameCount = static_cast<uint32_t>(m_descriptorSets.size() / ESetIndex_SetCount);
+	for (size_t i = 0; i < frameCount; i++)
 	{
 		auto imageInfo = initializers::DescriptorImageInfo(VK_NULL_HANDLE, m_imageViews[i]->GetImageView(), VK_IMAGE_LAYOUT_GENERAL);
-		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i + setSize], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &imageInfo));
+		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + i * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &imageInfo));
 	};
 	vkUpdateDescriptorSets(m_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
@@ -188,48 +190,37 @@ uint32_t RenderTechniquePPM::GetRequiredSetCount() const
 	return 2; // Photon Tracing and Estimate sets
 }
 
-void RenderTechniquePPM::GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& outPoolSizes) const
-{
-	outPoolSizes.push_back(initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2));			// Photon and Collision maps
-}
-
 void RenderTechniquePPM::QueueUpdateCloudData(VkDescriptorBufferInfo& cloudBufferInfo, unsigned int frameNr)
 {
-	size_t setSize = m_descriptorSets.size() / 2;
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr + setSize], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate  + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
 }
 
 void RenderTechniquePPM::QueueUpdateCloudDataSampler(VkDescriptorImageInfo& cloudImageInfo, unsigned int frameNr)
 {
-	size_t setSize = m_descriptorSets.size() / 2;
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr + setSize], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7, &cloudImageInfo));
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate  + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7, &cloudImageInfo));
 }
 
 void RenderTechniquePPM::QueueUpdateCameraProperties(VkDescriptorBufferInfo& cameraBufferInfo, unsigned int frameNr)
 {
-	size_t setSize = m_descriptorSets.size() / 2;
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr + setSize], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &cameraBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &cameraBufferInfo));
 }
 
 void RenderTechniquePPM::QueueUpdateParameters(VkDescriptorBufferInfo& parametersBufferInfo, unsigned int frameNr)
 {
-	size_t setSize = m_descriptorSets.size() / 2;
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr + setSize], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &parametersBufferInfo));
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &parametersBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &parametersBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &parametersBufferInfo));
 }
 
 void RenderTechniquePPM::QueueUpdateShadowVolume(VkDescriptorBufferInfo& shadowVolumeBufferInfo, unsigned int frameNr)
 {
-	size_t setSize = m_descriptorSets.size() / 2;
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr + setSize], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 9, &shadowVolumeBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 9, &shadowVolumeBufferInfo));
 }
 
 void RenderTechniquePPM::QueueUpdateShadowVolumeSampler(VkDescriptorImageInfo& shadowVolumeImageInfo, unsigned int frameNr)
 {
-	size_t setSize = m_descriptorSets.size() / 2;
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr + setSize], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8, &shadowVolumeImageInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8, &shadowVolumeImageInfo));
 }
 
 void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex)

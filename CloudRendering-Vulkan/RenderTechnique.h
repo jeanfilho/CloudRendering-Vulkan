@@ -27,7 +27,16 @@ public:
 	virtual void ClearFrameReferences() = 0;
 
 	virtual uint32_t GetRequiredSetCount() const = 0;
-	virtual void GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& outPoolSizes) const = 0;
+	inline void GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& outPoolSizes) const
+	{
+		for (auto& descriptorTypeCount : m_descriptorTypeCountMap)
+		{
+			VkDescriptorPoolSize poolSize{};
+			poolSize.type = descriptorTypeCount.first;
+			poolSize.descriptorCount = descriptorTypeCount.second;
+            outPoolSizes.push_back(poolSize);
+		}
+	}
 
 	virtual void QueueUpdateCloudData(VkDescriptorBufferInfo& cloudBufferInfo, unsigned int frameNr) = 0;
 	virtual void QueueUpdateCloudDataSampler(VkDescriptorImageInfo& cloudImageInfo, unsigned int frameNr) = 0;
@@ -39,8 +48,20 @@ public:
 	virtual void RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex) = 0;
 
 protected:
+	inline void AddDescriptorTypesCount(std::vector<VkDescriptorSetLayoutBinding>& bindings)
+	{
+		for(auto& binding : bindings)
+		{
+			m_descriptorTypeCountMap[binding.descriptorType] += binding.descriptorCount;
+        }
+	}
+
+protected:
 	VulkanDevice* m_device = nullptr;
 	PushConstants* m_pushConstants = nullptr;
 	std::vector<VkWriteDescriptorSet> m_writeQueue;
 	std::vector<VkDescriptorSet> m_descriptorSets;
+	unsigned int m_descriptorSetCount = 0;
+
+	std::unordered_map<VkDescriptorType, unsigned int> m_descriptorTypeCountMap;
 };

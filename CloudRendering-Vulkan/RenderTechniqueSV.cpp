@@ -20,6 +20,7 @@ RenderTechniqueSV::RenderTechniqueSV(VulkanDevice* device, const ShadowVolumePro
 		// Binding 3: Cloud Properties (read)
 		initializers::DescriptorSetLayoutBinding(3, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
 	};
+    AddDescriptorTypesCount(shadowVolumeLayoutBindings);
 	m_descriptorSetLayout = new VulkanDescriptorSetLayout(m_device, shadowVolumeLayoutBindings);
 
 
@@ -93,10 +94,6 @@ void RenderTechniqueSV::QueueUpdateShadowVolumeSampler(VkDescriptorImageInfo& sh
 uint32_t RenderTechniqueSV::GetRequiredSetCount() const
 {
 	return 1;
-}
-
-void RenderTechniqueSV::GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& outPoolSizes) const
-{
 }
 
 void RenderTechniqueSV::RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex)

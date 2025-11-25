@@ -7,6 +7,14 @@ class VulkanBufferView;
 
 class RenderTechniquePPM : public RenderTechnique
 {
+private:
+	const enum ESetIndex
+	{
+		ESetIndex_Tracing = 0,
+		ESetIndex_Estimate,
+		ESetIndex_SetCount
+	};
+
 public:
 	RenderTechniquePPM(VulkanDevice* device, VulkanSwapchain* swapchain, const CameraProperties* cameraProperties, PhotonMapProperties* photonMapProperties, PushConstants* pushConstants, float initialRadius);
 	~RenderTechniquePPM();
@@ -20,7 +28,6 @@ public:
 	virtual void ClearFrameReferences();
 
 	virtual uint32_t GetRequiredSetCount() const;
-	virtual void GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& outPoolSizes) const;
 
 	virtual void QueueUpdateCloudData(VkDescriptorBufferInfo& cloudBufferInfo, unsigned int frameNr);
 	virtual void QueueUpdateCloudDataSampler(VkDescriptorImageInfo& cloudImageInfo, unsigned int frameNr);

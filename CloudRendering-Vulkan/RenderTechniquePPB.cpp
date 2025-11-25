@@ -1,4 +1,6 @@
 #include "stdafx.h"
+
+#include <unordered_map>
 #include "RenderTechniquePPB.h"
 
 #include "VulkanBuffer.h"
@@ -27,6 +29,7 @@ RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* push
 			// Binding 5: Parameters (read)
 			initializers::DescriptorSetLayoutBinding(5, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
 		};
+        AddDescriptorTypesCount(tracingSetLayoutBindings);
 		m_tracingDescriptorSetLayout = new VulkanDescriptorSetLayout(m_device, tracingSetLayoutBindings);
 
 		std::vector<VkPushConstantRange> tracingPushConstantRanges
@@ -70,6 +73,7 @@ RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* push
 			// Binding 9: Shadow Volume Properties
 			initializers::DescriptorSetLayoutBinding(9, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
 		};
+		AddDescriptorTypesCount(estimateSetLayoutBindings);
 		m_estimateDescriptorSetLayout = new VulkanDescriptorSetLayout(m_device, estimateSetLayoutBindings);
 
 		std::vector<VkPushConstantRange> estimatePushConstantRanges
@@ -97,6 +101,7 @@ RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* push
 			// Binding 1: Tree
 			initializers::DescriptorSetLayoutBinding(1, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
 		};
+		AddDescriptorTypesCount(fittingSetLayoutBindings);
 		m_fittingDescriptorSetLayout = new VulkanDescriptorSetLayout(m_device, fittingSetLayoutBindings);
 
 		std::vector<VkPushConstantRange> fittingPushConstantRanges
@@ -124,6 +129,7 @@ RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* push
 			// Binding 1: Tree
 			initializers::DescriptorSetLayoutBinding(1, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
 		};
+        AddDescriptorTypesCount(hierarchySetLayoutBindings);
 		m_hierarchyDescriptorSetLayout = new VulkanDescriptorSetLayout(m_device, hierarchySetLayoutBindings);
 
 		std::vector<VkPushConstantRange> hierarchyPushConstantRanges
@@ -153,6 +159,7 @@ RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* push
 			// Binding 1: Histogram 4b
 			initializers::DescriptorSetLayoutBinding(2, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
 		};
+        AddDescriptorTypesCount(localSortSetLayoutBindings);
 		m_localSortDescriptorSetLayout = new VulkanDescriptorSetLayout(m_device, localSortSetLayoutBindings);
 
 		std::vector<VkPushConstantRange> localSortPushConstantRanges
@@ -184,6 +191,7 @@ RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* push
 			// Binding 1: Scanned Histogram 4b
 			initializers::DescriptorSetLayoutBinding(3, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
 		};
+        AddDescriptorTypesCount(globalSortSetLayoutBindings);
 		m_globalSortDescriptorSetLayout = new VulkanDescriptorSetLayout(m_device, globalSortSetLayoutBindings);
 
 		std::vector<VkPushConstantRange> globalSortPushConstantRanges
@@ -211,6 +219,7 @@ RenderTechniquePPB::RenderTechniquePPB(VulkanDevice* device, PushConstants* push
 			// Binding 1: Scanned Histogram 4b
 			initializers::DescriptorSetLayoutBinding(1, VK_SHADER_STAGE_COMPUTE_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
 		};
+        AddDescriptorTypesCount(prefixSumSetLayoutBindings);
 		m_prefixSumDescriptorSetLayout = new VulkanDescriptorSetLayout(m_device, prefixSumSetLayoutBindings);
 
 		std::vector<VkPushConstantRange> prefixSumPushConstantRanges
@@ -391,42 +400,37 @@ uint32_t RenderTechniquePPB::GetRequiredSetCount() const
 	return ESetIndex_SetCount;
 }
 
-void RenderTechniquePPB::GetDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& outPoolSizes) const
-{
-	outPoolSizes.push_back(initializers::DescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6)); // Beams * 2 + Beam Data + Histogram + Scanned Histogram + Tree
-}
-
 void RenderTechniquePPB::QueueUpdateCloudData(VkDescriptorBufferInfo& cloudBufferInfo, unsigned int frameNr)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &cloudBufferInfo));
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6, &cloudBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &cloudBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6, &cloudBufferInfo));
 }
 
 void RenderTechniquePPB::QueueUpdateCloudDataSampler(VkDescriptorImageInfo& cloudImageInfo, unsigned int frameNr)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, &cloudImageInfo));
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &cloudImageInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, &cloudImageInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &cloudImageInfo));
 }
 
 void RenderTechniquePPB::QueueUpdateCameraProperties(VkDescriptorBufferInfo& cameraBufferInfo, unsigned int frameNr)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &cameraBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &cameraBufferInfo));
 }
 
 void RenderTechniquePPB::QueueUpdateParameters(VkDescriptorBufferInfo& parametersBufferInfo, unsigned int frameNr)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5, &parametersBufferInfo));
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 7, &parametersBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5, &parametersBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 7, &parametersBufferInfo));
 }
 
 void RenderTechniquePPB::QueueUpdateShadowVolume(VkDescriptorBufferInfo& shadowVolumeBufferInfo, unsigned int frameNr)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 9, &shadowVolumeBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 9, &shadowVolumeBufferInfo));
 }
 
 void RenderTechniquePPB::QueueUpdateShadowVolumeSampler(VkDescriptorImageInfo& shadowVolumeImageInfo, unsigned int frameNr)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8, &shadowVolumeImageInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8, &shadowVolumeImageInfo));
 }
 
 void RenderTechniquePPB::RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex)
