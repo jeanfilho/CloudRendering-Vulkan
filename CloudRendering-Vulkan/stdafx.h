@@ -16,8 +16,8 @@
 #define VK_USE_PLATFORM_WIN32_KHR
 #pragma warning(push, 0) 
 #include "imgui.h"
-#include "examples/imgui_impl_glfw.h"
-#include "examples/imgui_impl_vulkan.h"
+#include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_vulkan.h"
 #pragma warning(pop) 
 
 #define GLFW_INCLUDE_NONE

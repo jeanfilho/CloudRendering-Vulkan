@@ -13,10 +13,14 @@ ImGUILayer::ImGUILayer(GLFWwindow* window, VulkanDevice* device, VulkanSwapchain
 
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+
 	ImGui::StyleColorsDark();
 
 	ImGui_ImplGlfw_InitForVulkan(window, true);
+    ImGui_ImplVulkan_Init(&initInfo);
 
     std::vector<VkDescriptorPoolSize> poolSizes =
     {
@@ -64,7 +68,12 @@ ImGUILayer::ImGUILayer(GLFWwindow* window, VulkanDevice* device, VulkanSwapchain
     m_renderPass = new VulkanImGUIRenderPass(m_device, swapchain);
 
     initInfo.DescriptorPool = m_descriptorPool->GetDescriptorPool();
-	ImGui_ImplVulkan_Init(&initInfo, m_renderPass->GetRenderPass());
+
+
+    ImGui_ImplVulkan_PipelineInfo pipelineInfo{};
+    pipelineInfo.RenderPass = m_renderPass->GetRenderPass();
+
+    ImGui_ImplVulkan_CreateMainPipeline(&pipelineInfo);
 }
 
 ImGUILayer::~ImGUILayer()

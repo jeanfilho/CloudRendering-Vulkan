@@ -79,7 +79,8 @@ std::vector<VulkanImageView*> g_resultImageViews;
 ImGUILayer* g_imguiLayer = nullptr;
 
 std::vector<VulkanSemaphore> g_imageAvailableSemaphores;
-std::vector<VulkanSemaphore> g_renderFinishedSemaphores;
+std::vector<VulkanSemaphore> g_computeFinishedSemaphores;
+std::vector<VulkanSemaphore> g_graphicsFinishedSemaphores;
 std::vector<VulkanFence> g_inFlightFences;
 std::vector<VkFence> g_imagesInFlight; //Vulkan type needed for function call in rendering loop
 uint32_t g_currentFrame = 0;
@@ -483,7 +484,8 @@ void Clear()
 
 	std::cout << "Clearing allocations...";
 	g_inFlightFences.clear();
-	g_renderFinishedSemaphores.clear();
+	g_graphicsFinishedSemaphores.clear();
+	g_computeFinishedSemaphores.clear();
 	g_imageAvailableSemaphores.clear();
 
 	// Graphics
@@ -529,7 +531,7 @@ void UpdateUI()
 	ImGui_ImplVulkan_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
-
+	
 	ImGui::Begin("Rendering Stats");
 	{
 		ImGui::Text("FrameCount: %i", g_pushConstants.frameCount);
@@ -542,7 +544,7 @@ void UpdateUI()
 	ImGui::Begin("Cloud File");
 	{
 		ImGui::Text("Current File: %s", g_UICurrentCloudFile.c_str());
-		ImGui::InputText("", g_UICloudFile, 1024);
+		ImGui::InputText("Filename", g_UICloudFile, 1024);
 		ImGui::SameLine();
 		if (ImGui::Button("Load"))
 		{
@@ -562,15 +564,15 @@ void UpdateUI()
 		ImGui::Separator();
 
 		ImGui::Text("Camera");
-		ImGui::InputFloat3("Position ", &g_cameraProperties.position[0], 2);
-		ImGui::InputFloat2("Rotation ", &g_UICameraRotate[0], 2);
+		ImGui::InputFloat3("Position ", &g_cameraProperties.position[0]);
+		ImGui::InputFloat2("Rotation ", &g_UICameraRotate[0]);
 		ImGui::InputFloat("FOV", &g_UIFov);
 		ImGui::Combo("Resolution", &g_UICurrentResolution, RESOLUTIONS_NAMES, IM_ARRAYSIZE(RESOLUTIONS_NAMES));
 
 		ImGui::Separator();
 
 		ImGui::Text("Lighting");
-		ImGui::InputFloat3("Direction ", &g_UILightDirection[0], 2);
+		ImGui::InputFloat3("Direction ", &g_UILightDirection[0]);
 		ImGui::SliderFloat("Intensity ", &g_parameters.lightIntensity, 0, 10);
 
 		ImGui::Separator();
@@ -647,42 +649,72 @@ void DrawFrame()
 	g_imagesInFlight[imageIndex] = g_inFlightFences[g_currentFrame].GetFence();
 
 	// Record commands
-
 	RecordComputeCommands(imageIndex);
+
+	// Submit compute command buffer to queue
+	{
+		std::vector<VkCommandBuffer> commandBuffers{ g_computeCommandPool->GetCommandBuffers()[g_currentFrame]};
+		VkSemaphore waitSemaphores[] = { g_imageAvailableSemaphores[g_currentFrame].GetSemaphore() };
+		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT };
+		VkSemaphore signalSemaphores[] = { g_computeFinishedSemaphores[g_currentFrame].GetSemaphore() };
+
+		VkSubmitInfo computeSubmit = initializers::SubmitInfo();
+		computeSubmit.waitSemaphoreCount = 1;
+		computeSubmit.pWaitSemaphores = waitSemaphores;
+		computeSubmit.pWaitDstStageMask = waitStages;
+		computeSubmit.pCommandBuffers = commandBuffers.data();
+		computeSubmit.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
+		computeSubmit.pSignalSemaphores = signalSemaphores;
+		computeSubmit.signalSemaphoreCount = 1;
+
+		// Reset current fence
+		vkResetFences(g_device->GetDevice(), 1, &g_inFlightFences[g_currentFrame].GetFence());
+
+		// Submit commands to compute queue and signal the inFlightFence when finished
+		ValidCheck(vkQueueSubmit(g_device->GetComputeQueue(), 1, &computeSubmit, g_inFlightFences[g_currentFrame].GetFence()));
+	}
+
+	// Wait on compute to finish before submitting the graphics queue
 	RecordImGUICommands(imageIndex);
 
-	// Submit command buffer to queue
-	std::vector<VkCommandBuffer> commandBuffers{ g_computeCommandPool->GetCommandBuffers()[g_currentFrame], g_graphicsCommandPool->GetCommandBuffers()[g_currentFrame] };
-	VkSemaphore waitSemaphores[] = { g_imageAvailableSemaphores[g_currentFrame].GetSemaphore() };
-	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT };
-	VkSemaphore signalSemaphores[] = { g_renderFinishedSemaphores[g_currentFrame].GetSemaphore() };
+	// Submit graphics command buffer to graphics queue, wait on compute completion
+	{
+		std::vector<VkCommandBuffer> commandBuffers{ g_graphicsCommandPool->GetCommandBuffers()[g_currentFrame] };
+		VkSemaphore waitSemaphores[] = { g_computeFinishedSemaphores[g_currentFrame].GetSemaphore() };
+		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT };
+		VkSemaphore signalSemaphores[] = { g_graphicsFinishedSemaphores[g_currentFrame].GetSemaphore() };
 
-	VkSubmitInfo submitInfo = initializers::SubmitInfo();
-	submitInfo.waitSemaphoreCount = 1;
-	submitInfo.pWaitSemaphores = waitSemaphores;
-	submitInfo.pWaitDstStageMask = waitStages;
-	submitInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
-	submitInfo.pCommandBuffers = commandBuffers.data();
-	submitInfo.signalSemaphoreCount = 1;
-	submitInfo.pSignalSemaphores = signalSemaphores;
+		VkPipelineStageFlags waitStagesGraphics[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+		VkSubmitInfo graphicsSubmit = initializers::SubmitInfo();
+		graphicsSubmit.waitSemaphoreCount = 1;
+		graphicsSubmit.pWaitSemaphores = waitSemaphores;
+		graphicsSubmit.pWaitDstStageMask = waitStagesGraphics;
+		graphicsSubmit.pCommandBuffers = commandBuffers.data(); // graphics CB
+		graphicsSubmit.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
+		graphicsSubmit.signalSemaphoreCount = 1;
+		graphicsSubmit.pSignalSemaphores = signalSemaphores;
 
-	// Reset current fence
-	vkResetFences(g_device->GetDevice(), 1, &g_inFlightFences[g_currentFrame].GetFence());
 
-	// Submit commands to compute queue and signal the inFlightFence when finished
-	ValidCheck(vkQueueSubmit(g_device->GetComputeQueue(), 1, &submitInfo, g_inFlightFences[g_currentFrame].GetFence()));
+		// Reset current fence
+		vkResetFences(g_device->GetDevice(), 1, &g_inFlightFences[g_currentFrame].GetFence());
+		ValidCheck(vkQueueSubmit(g_device->GetGraphicsQueue(), 1, &graphicsSubmit, g_inFlightFences[g_currentFrame].GetFence()));
+	}
 
 	// Present image
-	VkSwapchainKHR swapchains[] = { g_swapchain->GetSwapchain() };
-	VkPresentInfoKHR presentInfo = {};
-	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-	presentInfo.waitSemaphoreCount = 1;
-	presentInfo.pWaitSemaphores = signalSemaphores;
-	presentInfo.swapchainCount = 1;
-	presentInfo.pSwapchains = swapchains;
-	presentInfo.pImageIndices = &imageIndex;
+	{
+		VkSwapchainKHR swapchains[] = { g_swapchain->GetSwapchain() };
+		VkPresentInfoKHR presentInfo = {};
+		VkSemaphore waitSemaphores[] = { g_graphicsFinishedSemaphores[g_currentFrame].GetSemaphore() };
 
-	vkQueuePresentKHR(g_device->GetPresentQueue(), &presentInfo);
+		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+		presentInfo.waitSemaphoreCount = 1;
+		presentInfo.pWaitSemaphores = waitSemaphores;
+		presentInfo.swapchainCount = 1;
+		presentInfo.pSwapchains = swapchains;
+		presentInfo.pImageIndices = &imageIndex;
+		vkQueuePresentKHR(g_device->GetPresentQueue(), &presentInfo);
+	}
+
 
 	// Advance to next frame
 	g_currentFrame = (g_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -730,16 +762,13 @@ void InitializeImGUI()
 	initInfo.Queue = g_device->GetGraphicsQueue();
 	initInfo.PipelineCache = VK_NULL_HANDLE; //Unused
 	initInfo.DescriptorPool = VK_NULL_HANDLE; // Created by imguiLayer;
+	initInfo.DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE;
 	initInfo.Allocator = nullptr; //Unused
 	initInfo.MinImageCount = 2;
 	initInfo.ImageCount = static_cast<uint32_t>(g_swapchain->GetSwapchainImages().size());
 	initInfo.CheckVkResultFn = ValidCheck;
 
 	g_imguiLayer = new ImGUILayer(g_window, g_device, g_swapchain, initInfo);
-
-	VkCommandBuffer commandBuffer = utilities::BeginSingleTimeCommands(g_device, g_computeCommandPool);
-	ImGui_ImplVulkan_CreateFontsTexture(commandBuffer);
-	utilities::EndSingleTimeCommands(g_device, g_computeCommandPool, commandBuffer);
 }
 
 bool InitializeVulkan()
@@ -866,12 +895,14 @@ bool InitializeVulkan()
 
 	// Semaphores (GPU-GPU) and Fences (CPU-GPU)
 	g_imageAvailableSemaphores.reserve(MAX_FRAMES_IN_FLIGHT);
-	g_renderFinishedSemaphores.reserve(MAX_FRAMES_IN_FLIGHT);
+	g_graphicsFinishedSemaphores.reserve(MAX_FRAMES_IN_FLIGHT);
+	g_computeFinishedSemaphores.reserve(MAX_FRAMES_IN_FLIGHT);
 	g_inFlightFences.reserve(MAX_FRAMES_IN_FLIGHT);
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		g_imageAvailableSemaphores.emplace_back(g_device);
-		g_renderFinishedSemaphores.emplace_back(g_device);
+		g_graphicsFinishedSemaphores.emplace_back(g_device);
+        g_computeFinishedSemaphores.emplace_back(g_device);
 		g_inFlightFences.emplace_back(g_device);
 	}
 	g_imagesInFlight.resize(g_swapchain->GetSwapchainImages().size(), VK_NULL_HANDLE);
@@ -889,7 +920,7 @@ bool InitializeGLFW()
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
-	g_window = glfwCreateWindow(g_cameraProperties.GetWidth(), g_cameraProperties.GetHeight(), "Cloud Renderer", nullptr, nullptr);
+	g_window = glfwCreateWindow(g_cameraProperties.GetWidth(), g_cameraProperties.GetHeight(), "CloudRenderer", nullptr, nullptr);
 	glfwSetFramebufferSizeCallback(g_window, FramebufferResizeCallback);
 
 	std::cout << "OK" << std::endl;

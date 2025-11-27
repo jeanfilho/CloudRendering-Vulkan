@@ -227,8 +227,6 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 {
 	UpdateRadius(m_pushConstants->frameCount);
 
-	uint32_t setSize = static_cast<uint32_t>(m_descriptorSets.size() / 2);
-
 	// Photon Tracing
 	{
 		// Clear previous data
@@ -246,7 +244,7 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_ptPipeline->GetPipeline());
 
 		// Bind descriptor set (resources)
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_ptPipelineLayout->GetPipelineLayout(), 0, setSize, m_descriptorSets.data(), 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_ptPipelineLayout->GetPipelineLayout(), ESetIndex_Tracing, 1, m_descriptorSets.data() + currentFrame * ESetIndex_SetCount, 0, nullptr);
 
 		// Start compute shader
 		vkCmdDispatch(commandBuffer, 200, 1, 1);
@@ -268,7 +266,7 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pePipeline->GetPipeline());
 
 		// Bind descriptor set (resources)
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pePipelineLayout->GetPipelineLayout(), 0, setSize, m_descriptorSets.data() + setSize, 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pePipelineLayout->GetPipelineLayout(), ESetIndex_Estimate, 1, m_descriptorSets.data() + currentFrame * ESetIndex_SetCount, 0, nullptr);
 
 		// Start compute shader
 		vkCmdDispatch(commandBuffer, (m_cameraProperties->GetWidth() / 32) + 1, (m_cameraProperties->GetHeight() / 32) + 1, 1);
