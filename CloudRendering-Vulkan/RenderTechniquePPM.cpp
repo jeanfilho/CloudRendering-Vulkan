@@ -168,12 +168,15 @@ void RenderTechniquePPM::SetFrameReferences(std::vector<VulkanImage*>& frameImag
 	m_swapchain = swapchain;
 
 	// Update compute bindings for output image
+	std::vector<VkDescriptorImageInfo> imageInfos;
 	std::vector<VkWriteDescriptorSet> writes;
+	imageInfos.reserve(m_descriptorSets.size());
+	writes.reserve(m_descriptorSets.size());
 	uint32_t frameCount = static_cast<uint32_t>(m_descriptorSets.size() / ESetIndex_SetCount);
 	for (size_t i = 0; i < frameCount; i++)
 	{
-		auto imageInfo = initializers::DescriptorImageInfo(VK_NULL_HANDLE, m_imageViews[i]->GetImageView(), VK_IMAGE_LAYOUT_GENERAL);
-		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + i * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &imageInfo));
+		imageInfos.push_back(initializers::DescriptorImageInfo(VK_NULL_HANDLE, m_imageViews[i]->GetImageView(), VK_IMAGE_LAYOUT_GENERAL));
+		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + i * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &imageInfos.back()));
 	};
 	vkUpdateDescriptorSets(m_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }

@@ -82,7 +82,7 @@ VkPresentModeKHR VulkanSwapchain::ChoosePresentMode(const std::vector<VkPresentM
 {
 	for (const VkPresentModeKHR& availablePresentMode : availablePresentModes)
 	{
-		if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
+		if (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR)
 		{
 			return availablePresentMode;
 		}

@@ -1,5 +1,7 @@
 #include "stdafx.h"
 
+#define SWAPCHAIN_PRESENT_IMMEDIATE
+
 #include "VulkanInstance.h"
 #include "VulkanBuffer.h"
 #include "VulkanBufferView.h"
@@ -366,6 +368,8 @@ void ClearSwapchain()
 	}
 
 	g_graphicsFinishedSemaphores.clear();
+	g_resultImages.clear();
+    g_resultImageViews.clear();
 
 	std::cout << "OK" << std::endl;
 }
