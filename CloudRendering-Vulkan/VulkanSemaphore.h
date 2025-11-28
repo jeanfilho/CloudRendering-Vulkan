@@ -6,6 +6,8 @@ class VulkanSemaphore
 {
 public:
 	VulkanSemaphore(VulkanDevice* device);
+    VulkanSemaphore(VulkanSemaphore&& other) noexcept;
+    VulkanSemaphore(const VulkanSemaphore&& other);
 	~VulkanSemaphore();
 
 	VkSemaphore GetSemaphore();

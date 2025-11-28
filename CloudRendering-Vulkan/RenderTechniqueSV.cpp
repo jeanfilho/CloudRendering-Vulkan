@@ -63,32 +63,32 @@ void RenderTechniqueSV::ClearFrameReferences()
 {
 }
 
-void RenderTechniqueSV::QueueUpdateCloudData(VkDescriptorBufferInfo& cloudBufferInfo, unsigned int frameNr)
+void RenderTechniqueSV::QueueUpdateCloudData(VkDescriptorBufferInfo& cloudBufferInfo, unsigned int imageIdx)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[imageIdx], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
 }
 
-void RenderTechniqueSV::QueueUpdateCloudDataSampler(VkDescriptorImageInfo& cloudImageInfo, unsigned int frameNr)
+void RenderTechniqueSV::QueueUpdateCloudDataSampler(VkDescriptorImageInfo& cloudImageInfo, unsigned int imageIdx)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[imageIdx], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo));
 }
 
-void RenderTechniqueSV::QueueUpdateCameraProperties(VkDescriptorBufferInfo& cameraBufferInfo, unsigned int frameNr)
-{
-}
-
-void RenderTechniqueSV::QueueUpdateParameters(VkDescriptorBufferInfo& parametersBufferInfo, unsigned int frameNr)
+void RenderTechniqueSV::QueueUpdateCameraProperties(VkDescriptorBufferInfo& cameraBufferInfo, unsigned int imageIdx)
 {
 }
 
-void RenderTechniqueSV::QueueUpdateShadowVolume(VkDescriptorBufferInfo& shadowVolumeBufferInfo, unsigned int frameNr)
+void RenderTechniqueSV::QueueUpdateParameters(VkDescriptorBufferInfo& parametersBufferInfo, unsigned int imageIdx)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &shadowVolumeBufferInfo));
 }
 
-void RenderTechniqueSV::QueueUpdateShadowVolumeSampler(VkDescriptorImageInfo& shadowVolumeImageInfo, unsigned int frameNr)
+void RenderTechniqueSV::QueueUpdateShadowVolume(VkDescriptorBufferInfo& shadowVolumeBufferInfo, unsigned int imageIdx)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[frameNr], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &shadowVolumeImageInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[imageIdx], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &shadowVolumeBufferInfo));
+}
+
+void RenderTechniqueSV::QueueUpdateShadowVolumeSampler(VkDescriptorImageInfo& shadowVolumeImageInfo, unsigned int imageIdx)
+{
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[imageIdx], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &shadowVolumeImageInfo));
 }
 
 uint32_t RenderTechniqueSV::GetRequiredSetCount() const
@@ -96,7 +96,7 @@ uint32_t RenderTechniqueSV::GetRequiredSetCount() const
 	return 1;
 }
 
-void RenderTechniqueSV::RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex)
+void RenderTechniqueSV::RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int imageIndex)
 {
 	utilities::CmdTransitionImageLayout(commandBuffer, m_image->GetImage(), m_image->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 

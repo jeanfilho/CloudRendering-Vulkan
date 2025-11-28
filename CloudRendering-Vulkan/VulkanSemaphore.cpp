@@ -13,6 +13,21 @@ VulkanSemaphore::VulkanSemaphore(VulkanDevice* device)
 	ValidCheck(vkCreateSemaphore(m_device->GetDevice(), &semaphoreInfo, nullptr, &m_semaphore));
 }
 
+VulkanSemaphore::VulkanSemaphore(VulkanSemaphore&& other) noexcept
+{
+	m_device = std::move(other.m_device);
+	m_semaphore = std::move(other.m_semaphore);
+
+    other.m_device = VK_NULL_HANDLE;
+    other.m_semaphore = VK_NULL_HANDLE;
+}
+
+VulkanSemaphore::VulkanSemaphore(const VulkanSemaphore&& other)
+{
+    m_device = other.m_device;
+    m_semaphore = other.m_semaphore;
+}
+
 VulkanSemaphore::~VulkanSemaphore()
 {
 	if (m_semaphore != VK_NULL_HANDLE)

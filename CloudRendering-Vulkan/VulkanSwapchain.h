@@ -18,6 +18,7 @@ public:
 	std::vector<VkImage>& GetSwapchainImages();
 	VkFormat GetImageFormat();
 	VkExtent2D& GetExtent();
+	unsigned int GetImageCount() const;
 
 private:
 	VulkanDevice* m_device = nullptr;

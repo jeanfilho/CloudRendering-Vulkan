@@ -13,6 +13,13 @@ VulkanFence::VulkanFence(VulkanDevice* device)
 
 	ValidCheck(vkCreateFence(m_device->GetDevice(), &fenceInfo, nullptr, &m_fence));
 }
+VulkanFence::VulkanFence(VulkanFence&& other) noexcept
+{
+	m_device = std::move(other.m_device);
+	m_fence = std::move(other.m_fence);
+	other.m_device = VK_NULL_HANDLE;
+    other.m_fence = VK_NULL_HANDLE;
+}
 
 VulkanFence::~VulkanFence()
 {

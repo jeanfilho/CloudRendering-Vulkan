@@ -190,40 +190,40 @@ uint32_t RenderTechniquePPM::GetRequiredSetCount() const
 	return 2; // Photon Tracing and Estimate sets
 }
 
-void RenderTechniquePPM::QueueUpdateCloudData(VkDescriptorBufferInfo& cloudBufferInfo, unsigned int frameNr)
+void RenderTechniquePPM::QueueUpdateCloudData(VkDescriptorBufferInfo& cloudBufferInfo, unsigned int imageIdx)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate  + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing + imageIdx * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate  + imageIdx * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3, &cloudBufferInfo));
 }
 
-void RenderTechniquePPM::QueueUpdateCloudDataSampler(VkDescriptorImageInfo& cloudImageInfo, unsigned int frameNr)
+void RenderTechniquePPM::QueueUpdateCloudDataSampler(VkDescriptorImageInfo& cloudImageInfo, unsigned int imageIdx)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo));
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate  + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7, &cloudImageInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing + imageIdx * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &cloudImageInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate  + imageIdx * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7, &cloudImageInfo));
 }
 
-void RenderTechniquePPM::QueueUpdateCameraProperties(VkDescriptorBufferInfo& cameraBufferInfo, unsigned int frameNr)
+void RenderTechniquePPM::QueueUpdateCameraProperties(VkDescriptorBufferInfo& cameraBufferInfo, unsigned int imageIdx)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &cameraBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + imageIdx * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &cameraBufferInfo));
 }
 
-void RenderTechniquePPM::QueueUpdateParameters(VkDescriptorBufferInfo& parametersBufferInfo, unsigned int frameNr)
+void RenderTechniquePPM::QueueUpdateParameters(VkDescriptorBufferInfo& parametersBufferInfo, unsigned int imageIdx)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &parametersBufferInfo));
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &parametersBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Tracing + imageIdx * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &parametersBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + imageIdx * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &parametersBufferInfo));
 }
 
-void RenderTechniquePPM::QueueUpdateShadowVolume(VkDescriptorBufferInfo& shadowVolumeBufferInfo, unsigned int frameNr)
+void RenderTechniquePPM::QueueUpdateShadowVolume(VkDescriptorBufferInfo& shadowVolumeBufferInfo, unsigned int imageIdx)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 9, &shadowVolumeBufferInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + imageIdx * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 9, &shadowVolumeBufferInfo));
 }
 
-void RenderTechniquePPM::QueueUpdateShadowVolumeSampler(VkDescriptorImageInfo& shadowVolumeImageInfo, unsigned int frameNr)
+void RenderTechniquePPM::QueueUpdateShadowVolumeSampler(VkDescriptorImageInfo& shadowVolumeImageInfo, unsigned int imageIdx)
 {
-	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + frameNr * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8, &shadowVolumeImageInfo));
+	m_writeQueue.push_back(initializers::WriteDescriptorSet(m_descriptorSets[ESetIndex_Estimate + imageIdx * ESetIndex_SetCount], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8, &shadowVolumeImageInfo));
 }
 
-void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int currentFrame, unsigned int imageIndex)
+void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsigned int imageIndex)
 {
 	UpdateRadius(m_pushConstants->frameCount);
 
@@ -244,7 +244,7 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_ptPipeline->GetPipeline());
 
 		// Bind descriptor set (resources)
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_ptPipelineLayout->GetPipelineLayout(), ESetIndex_Tracing, 1, m_descriptorSets.data() + currentFrame * ESetIndex_SetCount, 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_ptPipelineLayout->GetPipelineLayout(), ESetIndex_Tracing, 1, m_descriptorSets.data() + imageIndex * ESetIndex_SetCount, 0, nullptr);
 
 		// Start compute shader
 		vkCmdDispatch(commandBuffer, 200, 1, 1);
@@ -259,14 +259,11 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 		// Push constants
 		vkCmdPushConstants(commandBuffer, m_pePipelineLayout->GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), m_pushConstants);
 
-		// Change Result Image Layout to writeable
-		utilities::CmdTransitionImageLayout(commandBuffer, m_images[currentFrame]->GetImage(), m_images[currentFrame]->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-
 		// Bind compute pipeline
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pePipeline->GetPipeline());
 
 		// Bind descriptor set (resources)
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pePipelineLayout->GetPipelineLayout(), ESetIndex_Estimate, 1, m_descriptorSets.data() + currentFrame * ESetIndex_SetCount, 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pePipelineLayout->GetPipelineLayout(), ESetIndex_Estimate, 1, m_descriptorSets.data() + imageIndex * ESetIndex_SetCount, 0, nullptr);
 
 		// Start compute shader
 		vkCmdDispatch(commandBuffer, (m_cameraProperties->GetWidth() / 32) + 1, (m_cameraProperties->GetHeight() / 32) + 1, 1);
@@ -276,7 +273,7 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 	utilities::CmdTransitionImageLayout(commandBuffer, m_swapchain->GetSwapchainImages()[imageIndex], m_swapchain->GetImageFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
 	// Change result image layout to scr blit
-	utilities::CmdTransitionImageLayout(commandBuffer, m_images[currentFrame]->GetImage(), m_images[currentFrame]->GetFormat(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	utilities::CmdTransitionImageLayout(commandBuffer, m_images[imageIndex]->GetImage(), m_images[imageIndex]->GetFormat(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
 	// Copy result to swapchain image
 	VkImageSubresourceLayers layers{};
@@ -284,7 +281,7 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 	layers.layerCount = 1;
 	layers.mipLevel = 0;
 
-	VkExtent3D extents = m_images[currentFrame]->GetExtent();
+	VkExtent3D extents = m_images[imageIndex]->GetExtent();
 	VkImageBlit blit{};
 	blit.srcOffsets[0] = { 0,0,0 };
 	blit.srcOffsets[1] = { static_cast<int32_t>(extents.width), static_cast<int32_t>(extents.height), static_cast<int32_t>(extents.depth) };
@@ -293,7 +290,10 @@ void RenderTechniquePPM::RecordDrawCommands(VkCommandBuffer commandBuffer, unsig
 	blit.dstOffsets[1] = { m_cameraProperties->GetWidth(), m_cameraProperties->GetHeight(), 1 };
 	blit.dstSubresource = layers;
 
-	vkCmdBlitImage(commandBuffer, m_images[currentFrame]->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_swapchain->GetSwapchainImages()[imageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+	vkCmdBlitImage(commandBuffer, m_images[imageIndex]->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_swapchain->GetSwapchainImages()[imageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+
+	utilities::CmdTransitionImageLayout(commandBuffer, m_swapchain->GetSwapchainImages()[imageIndex], m_swapchain->GetImageFormat(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+	utilities::CmdTransitionImageLayout(commandBuffer, m_images[imageIndex]->GetImage(), m_images[imageIndex]->GetFormat(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
 }
 
 void RenderTechniquePPM::UpdateRadius(unsigned int frameNumber)

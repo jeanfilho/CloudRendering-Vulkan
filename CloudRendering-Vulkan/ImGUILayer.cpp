@@ -19,8 +19,8 @@ ImGUILayer::ImGUILayer(GLFWwindow* window, VulkanDevice* device, VulkanSwapchain
 
 	ImGui::StyleColorsDark();
 
-	ImGui_ImplGlfw_InitForVulkan(window, true);
     ImGui_ImplVulkan_Init(&initInfo);
+	ImGui_ImplGlfw_InitForVulkan(window, true);
 
     std::vector<VkDescriptorPoolSize> poolSizes =
     {
@@ -81,8 +81,8 @@ ImGUILayer::~ImGUILayer()
     delete m_descriptorPool;
     delete m_renderPass;
 
-    ImGui_ImplVulkan_Shutdown();
     ImGui_ImplGlfw_Shutdown();
+    ImGui_ImplVulkan_Shutdown();
 	ImGui::DestroyContext();
 }
 

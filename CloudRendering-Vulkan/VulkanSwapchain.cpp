@@ -109,3 +109,8 @@ VkExtent2D VulkanSwapchain::ChooseExtent(const VkSurfaceCapabilitiesKHR& capabil
 		return actualExtent;
 	}
 }
+
+unsigned int VulkanSwapchain::GetImageCount() const
+{
+	return (unsigned int)m_swapchainImages.size();
+}

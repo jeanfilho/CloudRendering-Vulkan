@@ -6,6 +6,7 @@ class VulkanFence
 {
 public:
 	VulkanFence(VulkanDevice* device);
+    VulkanFence(VulkanFence&& other) noexcept;
 	~VulkanFence();
 
 	VkFence& GetFence();

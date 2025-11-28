@@ -44,8 +44,8 @@ VulkanImage::~VulkanImage()
 {
 	if (m_image != VK_NULL_HANDLE)
 	{
-		vkFreeMemory(m_device->GetDevice(), m_deviceMemory, nullptr);
 		vkDestroyImage(m_device->GetDevice(), m_image, nullptr);
+		vkFreeMemory(m_device->GetDevice(), m_deviceMemory, nullptr);
 	}
 }
 
