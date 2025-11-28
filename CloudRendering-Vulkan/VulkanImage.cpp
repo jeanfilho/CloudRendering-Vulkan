@@ -40,6 +40,28 @@ VulkanImage::VulkanImage(VulkanDevice* device, VkFormat format, VkImageUsageFlag
 	ValidCheck(vkBindImageMemory(m_device->GetDevice(), m_image, m_deviceMemory, 0));
 }
 
+VulkanImage::VulkanImage(VulkanImage&& other) noexcept
+{
+	m_device = std::move(other.m_device);
+	m_deviceMemory = std::move(other.m_deviceMemory);
+	m_image = std::move(other.m_image);
+	m_format = std::move(other.m_format);
+	m_extents = std::move(other.m_extents);
+
+	other.m_device = nullptr;
+    other.m_deviceMemory = VK_NULL_HANDLE;
+    other.m_image = VK_NULL_HANDLE;
+}
+
+VulkanImage::VulkanImage(const VulkanImage&& other)
+{
+	m_device = other.m_device;
+	m_deviceMemory = other.m_deviceMemory;
+	m_image = other.m_image;
+	m_format = other.m_format;
+	m_extents = other.m_extents;
+}
+
 VulkanImage::~VulkanImage()
 {
 	if (m_image != VK_NULL_HANDLE)

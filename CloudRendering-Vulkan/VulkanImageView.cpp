@@ -31,6 +31,20 @@ VulkanImageView::VulkanImageView(VulkanDevice* device, VkImage image, VkFormat f
 	ValidCheck(vkCreateImageView(m_device->GetDevice(), &viewInfo, nullptr, &m_imageView));
 }
 
+VulkanImageView::VulkanImageView(VulkanImageView&& other) noexcept
+{
+	m_device = std::move(other.m_device);
+	m_imageView = std::move(other.m_imageView);
+	other.m_device = nullptr;
+    other.m_imageView = VK_NULL_HANDLE;
+}
+
+VulkanImageView::VulkanImageView(const VulkanImageView && other)
+{
+	m_device = other.m_device;
+	m_imageView = other.m_imageView;
+}
+
 VulkanImageView::~VulkanImageView()
 {
 	if (m_imageView != VK_NULL_HANDLE)

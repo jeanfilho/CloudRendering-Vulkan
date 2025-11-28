@@ -6,6 +6,8 @@ class VulkanImage
 {
 public:
 	VulkanImage(VulkanDevice* device, VkFormat format, VkImageUsageFlags usage, uint32_t width, uint32_t height = 1, uint32_t depth = 1);
+	VulkanImage(VulkanImage&& other) noexcept;
+	VulkanImage(const VulkanImage&& other);
 	~VulkanImage();
 
 	VkImage GetImage();

@@ -50,11 +50,14 @@ void RenderTechniqueSV::SetFrameReferences(std::vector<VulkanImage*>& frameImage
 	m_imageView = frameImageViews[0];
 
 	// Update compute bindings for output image
+    std::vector<VkDescriptorImageInfo> imageInfos;
 	std::vector<VkWriteDescriptorSet> writes;
+    imageInfos.reserve(m_descriptorSets.size());
+	writes.reserve(m_descriptorSets.size());
 	for (size_t i = 0; i < m_descriptorSets.size(); i++)
 	{
-		auto imageInfo = initializers::DescriptorImageInfo(VK_NULL_HANDLE, m_imageView->GetImageView(), VK_IMAGE_LAYOUT_GENERAL);
-		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &imageInfo));
+		imageInfos.push_back(initializers::DescriptorImageInfo(VK_NULL_HANDLE, m_imageView->GetImageView(), VK_IMAGE_LAYOUT_GENERAL));
+		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &imageInfos.back()));
 	};
 	vkUpdateDescriptorSets(m_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }

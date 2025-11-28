@@ -94,7 +94,7 @@ double g_renderStartTime = 0;
 double g_previousTime = 0;
 unsigned int g_framesInSecond = 0;
 
-constexpr int MAX_FRAMES_IN_FLIGHT = 1;
+constexpr int MAX_FRAMES_IN_FLIGHT = 3;
 const char* CLOUD_FILE_PATH = "../models/mycloud.xyz";
 
 //----------------------------------------------------------------------
@@ -190,55 +190,6 @@ bool LoadCloudFile(const std::string filename)
 void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
 {
 	std::cout << "Button pressed";
-}
-
-void RecordComputeCommands(uint32_t imageIndex)
-{
-	VkCommandBuffer& commandBuffer = g_computeCommandPool->GetCommandBuffers()[g_swapchainImageIdx];
-	VkImage swapchainImage = g_swapchain->GetSwapchainImages()[imageIndex];
-
-	// Clear existing commands
-	vkResetCommandBuffer(commandBuffer, 0);
-
-	// Start recording commands
-    VkCommandBufferBeginInfo beginInfo = initializers::CommandBufferBeginInfo();
-	vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-	// Record technique commands
-	g_currentTechnique->RecordDrawCommands(commandBuffer, imageIndex);
-
-	// End recording
-	vkEndCommandBuffer(commandBuffer);
-}
-
-void RecordImGUICommands(uint32_t imageIndex)
-{
-	VkCommandBuffer commandBuffer = g_graphicsCommandPool->GetCommandBuffers()[g_swapchainImageIdx];
-	VkImage swapchainImage = g_swapchain->GetSwapchainImages()[imageIndex];
-
-	vkResetCommandBuffer(commandBuffer, 0);
-    VkCommandBufferBeginInfo beginInfo = initializers::CommandBufferBeginInfo();
-	vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-	VkClearValue clearValue{};
-	clearValue.color = VkClearColorValue();
-	clearValue.depthStencil = VkClearDepthStencilValue();
-
-	VkRenderPassBeginInfo info = {};
-	info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	info.renderPass = g_imguiLayer->GetRenderPass()->GetRenderPass();
-	info.framebuffer = g_framebuffers[imageIndex]->GetFramebuffer();
-	info.renderArea.extent.width = g_cameraProperties.GetWidth();
-	info.renderArea.extent.height = g_cameraProperties.GetHeight();
-	info.clearValueCount = 1;
-	info.pClearValues = &clearValue;
-	vkCmdBeginRenderPass(commandBuffer, &info, VK_SUBPASS_CONTENTS_INLINE);
-
-	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
-
-	vkCmdEndRenderPass(commandBuffer);
-
-	ValidCheck(vkEndCommandBuffer(commandBuffer));
 }
 
 void SetRenderTechnique(ERenderTechnique renderTechnique)
@@ -414,6 +365,8 @@ void ClearSwapchain()
 		g_resultImageViews[i] = nullptr;
 	}
 
+	g_graphicsFinishedSemaphores.clear();
+
 	std::cout << "OK" << std::endl;
 }
 
@@ -447,16 +400,17 @@ void CreateSwapchain()
 	// Compute result image and view
 	for (unsigned int i = 0; i < g_swapchain->GetImageCount(); i++)
 	{
-		g_resultImages.push_back(new VulkanImage(g_device,
+		VulkanImage* image = new VulkanImage(g_device,
 			VK_FORMAT_R32G32B32A32_SFLOAT,
 			VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
 			static_cast<uint32_t>(g_cameraProperties.GetWidth()),
-			static_cast<uint32_t>(g_cameraProperties.GetHeight())));
-		g_resultImageViews.push_back(new VulkanImageView(g_device, g_resultImages[i]));
+			static_cast<uint32_t>(g_cameraProperties.GetHeight()));
+		g_resultImages.push_back(image);
+		g_resultImageViews.push_back(new VulkanImageView(g_device, image));
 	}
-	VkCommandBuffer commandBuffer = utilities::BeginSingleTimeCommands(g_device, g_computeCommandPool);
 
-	// Transition to general since they will be written to in the rendering techniques
+	// Transition to general layout since they will be written to in the rendering techniques
+	VkCommandBuffer commandBuffer = utilities::BeginSingleTimeCommands(g_device, g_computeCommandPool);
 	for (unsigned int i = 0; i < g_swapchain->GetImageCount(); i++)
 	{
 		utilities::CmdTransitionImageLayout(commandBuffer, g_resultImages[i]->GetImage(), g_resultImages[i]->GetFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
@@ -472,6 +426,12 @@ void CreateSwapchain()
 			g_framebuffers[i] = new VulkanFramebuffer(g_device, g_imguiLayer->GetRenderPass(), &g_swapchainImageViews[i], g_swapchain);
 		}
 	}
+
+	// Per-swapchain-image semaphore for presentation completion (unique per image)
+	for (size_t i = 0; i < g_swapchain->GetImageCount(); i++)
+	{
+		g_graphicsFinishedSemaphores.emplace_back(g_device);
+	}
 }
 
 void Clear()
@@ -482,7 +442,6 @@ void Clear()
 
 	std::cout << "Clearing allocations...";
 	g_inFlightFences.clear();
-	g_graphicsFinishedSemaphores.clear();
 	g_computeFinishedSemaphores.clear();
 	g_imageAvailableSemaphores.clear();
     g_imagesInFlight.clear();
@@ -642,11 +601,11 @@ void DrawFrame()
 	// Wait for queue to finish if it is still running, and restore fence to original state
 	vkWaitForFences(g_device->GetDevice(), 1, &g_inFlightFences[g_currentFrameIdx].GetFence(), VK_TRUE, UINT64_MAX);
 
-	// Acquire image from swapchain
+	// Acquire image from swapchain (signal the per-frame image-available semaphore)
 	uint32_t imageIndex;
-	ValidCheck(vkAcquireNextImageKHR(g_device->GetDevice(), g_swapchain->GetSwapchain(), UINT64_MAX, g_imageAvailableSemaphores[g_swapchainImageIdx].GetSemaphore(), VK_NULL_HANDLE, &imageIndex));
+	ValidCheck(vkAcquireNextImageKHR(g_device->GetDevice(), g_swapchain->GetSwapchain(), UINT64_MAX, g_imageAvailableSemaphores[g_currentFrameIdx].GetSemaphore(), VK_NULL_HANDLE, &imageIndex));
 
-	// Check if a previous frame is using this image (i.e. there is its fence to wait on)
+	// If a previous frame is still using this image, wait for its fence
 	if (g_imagesInFlight[imageIndex] != VK_NULL_HANDLE)
 	{
 		vkWaitForFences(g_device->GetDevice(), 1, &g_imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
@@ -658,15 +617,20 @@ void DrawFrame()
 	// Mark the image as now being in use by this frame
 	g_imagesInFlight[imageIndex] = g_inFlightFences[g_currentFrameIdx].GetFence();
 
-	// Record commands
-	RecordComputeCommands(imageIndex);
-
 	// Submit compute command buffer to queue
 	{
-		std::vector<VkCommandBuffer> commandBuffers{ g_computeCommandPool->GetCommandBuffers()[g_swapchainImageIdx]};
-		VkSemaphore waitSemaphores[] = { g_imageAvailableSemaphores[g_swapchainImageIdx].GetSemaphore() };
+		VkCommandBuffer commandBuffer = g_computeCommandPool->GetCommandBuffers()[imageIndex];
+
+		vkResetCommandBuffer(commandBuffer, 0);
+		VkCommandBufferBeginInfo beginInfo = initializers::CommandBufferBeginInfo();
+		vkBeginCommandBuffer(commandBuffer, &beginInfo);
+		g_currentTechnique->RecordDrawCommands(commandBuffer, imageIndex);
+		ValidCheck(vkEndCommandBuffer(commandBuffer));
+
+		std::vector<VkCommandBuffer> commandBuffers{ commandBuffer };
+		VkSemaphore waitSemaphores[] = { g_imageAvailableSemaphores[g_currentFrameIdx].GetSemaphore() };
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT };
-		VkSemaphore signalSemaphores[] = { g_computeFinishedSemaphores[g_swapchainImageIdx].GetSemaphore() };
+		VkSemaphore signalSemaphores[] = { g_computeFinishedSemaphores[g_currentFrameIdx].GetSemaphore() };
 
 		VkSubmitInfo computeSubmit = initializers::SubmitInfo();
 		computeSubmit.pWaitSemaphores = waitSemaphores;
@@ -677,37 +641,57 @@ void DrawFrame()
 		computeSubmit.pSignalSemaphores = signalSemaphores;
 		computeSubmit.signalSemaphoreCount = 1;
 
-		// Submit commands to compute queue and signal the inFlightFence when finished
 		ValidCheck(vkQueueSubmit(g_device->GetComputeQueue(), 1, &computeSubmit, VK_NULL_HANDLE));
 	}
 
-	// Wait on compute to finish before submitting the graphics queue
-	RecordImGUICommands(imageIndex);
-
 	// Submit graphics command buffer to graphics queue, wait on compute completion
 	{
-		std::vector<VkCommandBuffer> commandBuffers{ g_graphicsCommandPool->GetCommandBuffers()[g_swapchainImageIdx] };
-		VkSemaphore waitSemaphores[] = { g_computeFinishedSemaphores[g_swapchainImageIdx].GetSemaphore() };
+		VkCommandBuffer commandBuffer = g_graphicsCommandPool->GetCommandBuffers()[imageIndex];
+
+		vkResetCommandBuffer(commandBuffer, 0);
+		VkCommandBufferBeginInfo beginInfo = initializers::CommandBufferBeginInfo();
+		vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+		VkClearValue clearValue{};
+		clearValue.color = VkClearColorValue();
+		clearValue.depthStencil = VkClearDepthStencilValue();
+
+		VkRenderPassBeginInfo info = {};
+		info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		info.renderPass = g_imguiLayer->GetRenderPass()->GetRenderPass();
+		info.framebuffer = g_framebuffers[imageIndex]->GetFramebuffer();
+		info.renderArea.extent.width = g_cameraProperties.GetWidth();
+		info.renderArea.extent.height = g_cameraProperties.GetHeight();
+		info.clearValueCount = 1;
+		info.pClearValues = &clearValue;
+		vkCmdBeginRenderPass(commandBuffer, &info, VK_SUBPASS_CONTENTS_INLINE);
+		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+		vkCmdEndRenderPass(commandBuffer);
+		ValidCheck(vkEndCommandBuffer(commandBuffer));
+
+		std::vector<VkCommandBuffer> commandBuffers{ commandBuffer };
+		VkSemaphore waitSemaphores[] = { g_computeFinishedSemaphores[g_currentFrameIdx].GetSemaphore() };
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT };
-		VkSemaphore signalSemaphores[] = { g_graphicsFinishedSemaphores[g_swapchainImageIdx].GetSemaphore() };
+		VkSemaphore signalSemaphores[] = { g_graphicsFinishedSemaphores[imageIndex].GetSemaphore() };
 
 		VkPipelineStageFlags waitStagesGraphics[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 		VkSubmitInfo graphicsSubmit = initializers::SubmitInfo();
 		graphicsSubmit.waitSemaphoreCount = 1;
 		graphicsSubmit.pWaitSemaphores = waitSemaphores;
 		graphicsSubmit.pWaitDstStageMask = waitStagesGraphics;
-		graphicsSubmit.pCommandBuffers = commandBuffers.data(); // graphics CB
+		graphicsSubmit.pCommandBuffers = commandBuffers.data();
 		graphicsSubmit.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
 		graphicsSubmit.signalSemaphoreCount = 1;
 		graphicsSubmit.pSignalSemaphores = signalSemaphores;
 
-		ValidCheck(vkQueueSubmit(g_device->GetGraphicsQueue(), 1, &graphicsSubmit, g_imagesInFlight[imageIndex]));
+		// Submit and signal the frame's fence
+		ValidCheck(vkQueueSubmit(g_device->GetGraphicsQueue(), 1, &graphicsSubmit, g_inFlightFences[g_currentFrameIdx].GetFence()));
 	}
 
-	// Present image
+	// Present image (wait on this frame's graphics-finished semaphore)
 	{
 		VkSwapchainKHR swapchains[] = { g_swapchain->GetSwapchain() };
-		VkSemaphore waitSemaphores[] = { g_graphicsFinishedSemaphores[g_swapchainImageIdx].GetSemaphore() };
+		VkSemaphore waitSemaphores[] = { g_graphicsFinishedSemaphores[imageIndex].GetSemaphore() };
 
 		VkPresentInfoKHR presentInfo = {};
 		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -716,12 +700,11 @@ void DrawFrame()
 		presentInfo.swapchainCount = 1;
 		presentInfo.pSwapchains = swapchains;
 		presentInfo.pImageIndices = &imageIndex;
-		vkQueuePresentKHR(g_device->GetPresentQueue(), &presentInfo);
+		ValidCheck(vkQueuePresentKHR(g_device->GetPresentQueue(), &presentInfo));
 	}
 
-	// Advance to next frame idx and swapchain image
+	// Advance to next frame
 	g_currentFrameIdx = (g_currentFrameIdx + 1) % MAX_FRAMES_IN_FLIGHT;
-    g_swapchainImageIdx = (g_swapchainImageIdx + 1) % g_swapchain->GetImageCount();
 }
 
 void RenderLoop()
@@ -908,12 +891,12 @@ bool InitializeVulkan()
 		g_inFlightFences.emplace_back(g_device);
 	}
 
-	for(size_t i = 0; i < g_swapchain->GetImageCount(); i++)
+	// Per-frame semaphores
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		g_graphicsFinishedSemaphores.emplace_back(g_device);
-		g_computeFinishedSemaphores.emplace_back(g_device);
 		g_imageAvailableSemaphores.emplace_back(g_device);
-    }
+		g_computeFinishedSemaphores.emplace_back(g_device);
+	}	
 
 	g_imagesInFlight.resize(g_swapchain->GetSwapchainImages().size(), VK_NULL_HANDLE);
 

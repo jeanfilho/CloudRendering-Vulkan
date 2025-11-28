@@ -72,11 +72,14 @@ void RenderTechniquePT::SetFrameReferences(std::vector<VulkanImage*>& frameImage
 	m_swapchain = swapchain;
 
 	// Update compute bindings for output image
+	std::vector<VkDescriptorImageInfo> imageInfos;
 	std::vector<VkWriteDescriptorSet> writes;
+	imageInfos.reserve(m_descriptorSets.size());
+	writes.reserve(m_descriptorSets.size());
 	for (size_t i = 0; i < m_descriptorSets.size(); i++)
 	{
-		auto imageInfo = initializers::DescriptorImageInfo(VK_NULL_HANDLE, m_imageViews[i]->GetImageView(), VK_IMAGE_LAYOUT_GENERAL);
-		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &imageInfo));
+		imageInfos.push_back(initializers::DescriptorImageInfo(VK_NULL_HANDLE, m_imageViews[i]->GetImageView(), VK_IMAGE_LAYOUT_GENERAL));
+		writes.push_back(initializers::WriteDescriptorSet(m_descriptorSets[i], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, &imageInfos.back()));
 	};
 	vkUpdateDescriptorSets(m_device->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
@@ -132,7 +135,7 @@ void RenderTechniquePT::RecordDrawCommands(VkCommandBuffer commandBuffer, unsign
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline->GetPipeline());
 
 	// Bind descriptor set (resources)
-	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout->GetPipelineLayout(), 0, 1, m_descriptorSets.data() + imageIndex, 0, nullptr);
+	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout->GetPipelineLayout(), 0, 1, &m_descriptorSets[imageIndex], 0, nullptr);
 
 	// Start compute shader
 	vkCmdDispatch(commandBuffer, (m_cameraProperties->GetWidth() / 32) + 1, (m_cameraProperties->GetHeight() / 32) + 1, 1);
